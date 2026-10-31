@@ -193,9 +193,37 @@ export class SshdInstance {
   async stop(): Promise<void> {
     const p = this.proc;
     if (!p || p.exitCode !== null) return;
+    // Per-connection sshd-session processes outlive the listener, and tests
+    // freeze them with SIGSTOP: kill them explicitly (SIGKILL also ends stopped
+    // processes) so no test server is left behind.
+    for (const child of descendantPids(p.pid!)) {
+      try {
+        process.kill(child, 'SIGKILL');
+      } catch {
+        // already gone
+      }
+    }
     await new Promise<void>((res) => {
       p.once('exit', () => res());
       p.kill('SIGTERM');
     });
   }
+}
+
+function descendantPids(root: number): number[] {
+  const rows = execFileSync('ps', ['-e', '-o', 'pid=,ppid='])
+    .toString()
+    .trim()
+    .split('\n')
+    .map((l) => l.trim().split(/\s+/).map(Number) as [number, number]);
+  const out: number[] = [];
+  const walk = (pid: number): void => {
+    for (const [c, pp] of rows) {
+      if (pp !== pid) continue;
+      out.push(c);
+      walk(c);
+    }
+  };
+  walk(root);
+  return out;
 }
