@@ -16,6 +16,7 @@ import { TrustStore } from './connections/trust-store';
 import { DownloadService } from './downloads/download-service';
 import { TransferJournal } from './downloads/journal';
 import { registerIpcHandlers } from './ipc/handlers';
+import { normalizeAppUrl } from './ipc/app-url';
 import { createIpcRouter } from './ipc/router';
 import { chooseDownloadFolder, chooseFile, chooseSavePath } from './platform/dialogs';
 import type { Recovery } from './platform/json-file';
@@ -153,7 +154,9 @@ async function startApp(): Promise<void> {
     app.quit();
   };
 
-  const rendererUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL ?? pathToFileURL(RENDERER_INDEX()).href;
+  const rendererUrl = normalizeAppUrl(
+    MAIN_WINDOW_VITE_DEV_SERVER_URL ?? pathToFileURL(RENDERER_INDEX()).href,
+  );
   const router = createIpcRouter({
     profiles,
     settings,
@@ -175,7 +178,8 @@ async function startApp(): Promise<void> {
       !!mainWindow &&
       s.webContentsId === mainWindow.webContents.id &&
       s.isMainFrame &&
-      s.frameUrl.split('#')[0] === rendererUrl,
+      rendererUrl !== null &&
+      normalizeAppUrl(s.frameUrl) === rendererUrl,
     onSettingsChanged: (st) => {
       nativeTheme.themeSource = st.theme;
     },
