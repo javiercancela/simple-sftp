@@ -1,8 +1,8 @@
-# SimpleSFTP (milestones 1–4: transport, profiles, connection UI, browsing, downloads)
+# SimpleSFTP (version 1 candidate: spec section 13 steps 1–5)
 
 Small Electron app for browsing SFTP servers and downloading files with an SSH
 private key, optionally paired with an OpenSSH user certificate. See
-[`SPEC.md`](SPEC.md). This build covers **spec section 13 steps 1–4**:
+[`SPEC.md`](SPEC.md). This build covers **spec section 13 steps 1–5**:
 
 1. Transport adapter, real OpenSSH tests, packaged smoke test.
 2. Saved server profiles (create, edit, duplicate, delete), native file
@@ -14,6 +14,8 @@ private key, optionally paired with an OpenSSH user certificate. See
    multi-selection, symlink handling, and distinct empty, loading,
    permission-denied, not-found and disconnected states.
 4. Downloads (spec 7): see below.
+5. Release validation: acceptance status per criterion in
+   [`docs/acceptance.md`](docs/acceptance.md).
 
 ### Browsing keyboard shortcuts
 
@@ -144,32 +146,51 @@ and with `SFTP_CLIENT_TRANSPORT_SMOKE` set it still starts to the normal UI
 
 Transport validation results and the dependency patch: [`docs/transport-validation.md`](docs/transport-validation.md).
 
+## Supported operating systems
+
+The app is pinned to **Electron 45.2.1** (Chromium 156, Node.js 24.22.1). Per
+the platform section of that release's README (`node_modules/electron/README.md`)
+and the Electron 44/45 breaking-change notes:
+
+| OS                    | Electron 45 minimum                                              | This project                                                                                      |
+| --------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| macOS (Apple Silicon) | macOS 13 Ventura or later (macOS 12 was dropped in Electron 44)  | Build target; **not tested**                                                                      |
+| macOS (Intel)         | macOS 13 Ventura or later                                        | Build target; **not tested**                                                                      |
+| Windows x64           | Windows 10 or later                                              | Build target; **not tested**                                                                      |
+| Linux x64             | Major distributions still supported by Chromium and their vendor | Baseline **Ubuntu 24.04 or later** (spec 11); **tested only on Debian 13 (trixie) x64**, headless |
+
+A platform counts as supported only after its packaged build passes
+`npm run smoke:packaged` on that OS; so far that is Linux x64 only.
+
 ## Requirements (development only)
 
 - Node.js 24 + npm 11 (the installed app needs neither)
 - `ssh-keygen` (test credentials are generated at test time)
 - An OpenSSH `sshd` binary for integration tests (not a running service; the
   tests start their own unprivileged server on `127.0.0.1`)
-- Linux: `zip` (portable archive), `xvfb-run` for headless smoke tests
+- Linux: `zip` and `fakeroot`/`dpkg` (for `npm run make`), `xvfb-run` for
+  headless E2E and smoke tests
 
 ## Commands
 
 | Command                  | What it does                                                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | `npm ci`                 | Install pinned dependencies; also applies `patches/` (patch-package)                                                         |
-| `npm start`              | Run in development (Vite dev server)                                                                                         |
+| `npm start`              | Run in development (Vite dev server, live reload)                                                                            |
 | `npm run typecheck`      | Strict TypeScript check                                                                                                      |
 | `npm run lint`           | oxlint (incl. layer boundary rules, spec 9.3) + oxfmt check                                                                  |
-| `npm test`               | Unit tests + real OpenSSH integration tests                                                                                  |
-| `npm run test:unit`      | Unit tests only                                                                                                              |
+| `npm test`               | Unit tests + real OpenSSH integration tests (needs `sshd`, see below)                                                        |
+| `npm run test:unit`      | Unit tests only (no `sshd` needed)                                                                                           |
 | `npm run test:e2e`       | Electron UI end-to-end tests against real sshd (xvfb on headless Linux); writes `docs/screenshots/`                          |
-| `npm run make`           | Build release installers/archives into `out/make/`                                                                           |
+| `npm run make`           | Build release installers/archives for the current OS into `out/make/`                                                        |
 | `npm run smoke:packaged` | Build a smoke-flavored package into `out-smoke/`, run it against a real sshd, and check the release artifacts (after `make`) |
+| `npm run notices`        | Regenerate `THIRD_PARTY_NOTICES.md` from the production dependencies (a unit test fails when it is stale)                    |
 
 The E2E tests drive the production renderer/main bundle with the development
 Electron binary (the packaged app's fuses block automation, by design). They
 stub only the native file/Save/folder dialogs' return values and "Show in
-folder"; everything else, including SSH and the local file system, is real. User data is isolated with `XDG_CONFIG_HOME`.
+folder"; everything else, including SSH and the local file system, is real.
+User data is isolated with `XDG_CONFIG_HOME`.
 
 ## Test fixtures
 
@@ -179,55 +200,126 @@ certificates (valid, expired, wrong principal, wrong CA) and host keys with
 `KEEP_TEST_TMP=1` to keep them). Each test server is a separate unprivileged
 `sshd -D` bound to `127.0.0.1` on a random port, using `TrustedUserCAKeys` +
 `AuthorizedPrincipalsFile` (certificate-only) or `authorized_keys`
-(plain-key), and `ForceCommand internal-sftp -d <fixture dir>`.
+(plain-key), and `ForceCommand internal-sftp -d <fixture dir>`. Tests stop
+their servers and any per-connection `sshd-session` processes afterwards.
 
 `sshd` lookup order: `$SFTP_TEST_SSHD`, `/usr/sbin/sshd`, `/usr/local/sbin/sshd`,
 `.tools/openssh/root/usr/sbin/sshd`. Set `SFTP_TEST_SSHD_LD_LIBRARY_PATH` when
-the binary needs extra libraries.
+the binary needs extra libraries. Ways to get one:
+
+- **Debian/Ubuntu with sudo**: `sudo apt install openssh-server` (the service
+  does not need to run; you may `sudo systemctl disable --now ssh`).
+- **Debian 13 amd64 without root**: `scripts/fetch-test-sshd-debian.sh`
+  downloads the signed Debian packages (release file verified against the
+  Debian archive keyring) and extracts them into `.tools/openssh/`. Then:
+
+  ```bash
+  export SFTP_TEST_SSHD=$PWD/.tools/openssh/root/usr/sbin/sshd
+  export SFTP_TEST_SSHD_LD_LIBRARY_PATH=$PWD/.tools/openssh/root/usr/lib/x86_64-linux-gnu
+  ```
+
+- **macOS**: `/usr/sbin/sshd` ships with the OS.
+
+The disk-full test needs unprivileged user namespaces (`unshare -Urm`); it
+is skipped where they are unavailable (macOS, Windows, or Linux with
+user namespaces disabled), so it only counts where it actually ran.
 
 ## Run steps per OS
 
-### Linux (tested here: Debian 13 x64)
+Verified on this box: a fresh `git clone` followed by exactly `npm ci && npm
+start` opens the app's first-run screen (checked headless under xvfb), and the
+fixture steps above followed by `npm test` pass in that clone.
+
+### Linux (tested here: Debian 13 x64; baseline Ubuntu 24.04+)
 
 ```bash
 npm ci
-# Either install openssh-server (sudo apt install openssh-server; the service
-# does not need to run), or fetch an unprivileged copy without root:
-scripts/fetch-test-sshd-debian.sh          # Debian 13 amd64 only
+npm start                                  # development
+# test fixtures: see "Test fixtures" above
 npm run typecheck && npm run lint && npm test
 npm run make                               # out/make/deb/x64/*.deb, out/make/zip/linux/x64/*.zip
 npm run test:e2e                           # uses xvfb-run automatically when $DISPLAY is unset
 npm run smoke:packaged                     # same
 ```
 
-Install: `sudo apt install ./out/make/deb/x64/simple-sftp_1.0.0_amd64.deb`, or
-unzip the portable archive and run `SimpleSFTP-linux-x64/simple-sftp`.
+Install the **unsigned development build**:
 
-### macOS (NOT tested yet)
+- `.deb`: `sudo apt install ./out/make/deb/x64/simple-sftp_1.0.0_amd64.deb`
+  (apt asks for your password and pulls GTK/NSS dependencies; there is no
+  signature prompt because a local file is not from a signed repository). Start
+  it from the applications menu ("SimpleSFTP") or run `simple-sftp`. Remove
+  with `sudo apt remove simple-sftp`. The package installs `chrome-sandbox`
+  set-uid root, as Electron requires for its sandbox.
+- Portable `.zip`: unzip anywhere and run `SimpleSFTP-linux-x64/simple-sftp`.
+  On Ubuntu 24.04+, AppArmor restricts unprivileged user namespaces; if the app
+  exits with a sandbox error (`The SUID sandbox helper binary was found, but is
+  not configured correctly`), either install the `.deb`, or once run
+  `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox`
+  inside the extracted folder. (Not reproduced here: Debian 13 allows
+  unprivileged user namespaces.)
+
+### macOS 13+ (NOT tested yet)
 
 ```bash
 npm ci
+npm start
 npm run typecheck && npm run lint && npm test   # uses /usr/sbin/sshd shipped with macOS
-npm run make                                    # .dmg + .zip for the host arch
+npm run make                                    # out/make/*.dmg and out/make/zip/darwin/<arch>/*.zip
 npm run test:e2e
 npm run smoke:packaged
 ```
 
 Build arm64 on Apple Silicon and x64 on an Intel Mac (or the matching CI
-runner). Builds are unsigned: first launch needs right-click → Open (or
-System Settings → Privacy & Security → Open Anyway).
+runner). Install the **unsigned development build**: open the `.dmg` and drag
+SimpleSFTP to Applications. Because it is not signed with a Developer ID or
+notarized, Gatekeeper blocks the first launch ("Apple could not verify
+“SimpleSFTP” is free of malware…" / "“SimpleSFTP” Not Opened"). On macOS 15
+Sequoia and later, open **System Settings → Privacy & Security**, scroll to
+the message about SimpleSFTP and click **Open Anyway**, then confirm with your
+password; on macOS 13–14, Control-click the app → **Open** also works. If
+macOS instead says the app "is damaged and can't be opened", the download
+quarantine flag is set on an unsigned arm64 build; remove it with
+`xattr -dr com.apple.quarantine /Applications/SimpleSFTP.app`. These prompts
+are expected for dev builds only; distribution beyond personal testing needs
+signing and notarization (spec 11).
 
-### Windows (NOT tested yet)
+### Windows 10+ x64 (NOT tested yet)
 
 ```powershell
 npm ci
+npm start
 npm run typecheck; npm run lint; npm run test:unit
-npm run make            # out\make\squirrel.windows\x64\SimpleSFTP Setup.exe (unsigned)
+npm run make            # out\make\squirrel.windows\x64\*Setup.exe (unsigned)
 ```
 
-The OpenSSH integration fixture and packaged smoke test do not run on Windows
-yet (no unprivileged sshd fixture). SmartScreen will warn on the unsigned
-installer ("More info" → "Run anyway").
+The OpenSSH integration fixture, E2E tests and packaged smoke test do not run
+on Windows yet (no unprivileged sshd fixture), so Windows has unit-test
+coverage only. Install the **unsigned development build** by running the
+Setup `.exe`: Microsoft Defender SmartScreen shows "Windows protected your
+PC"; click **More info → Run anyway**. The Squirrel installer then installs
+per user into `%LOCALAPPDATA%\SimpleSFTP` without an administrator prompt,
+starts the app, and adds Start menu and desktop shortcuts. Uninstall from
+**Settings → Apps**. With Smart App Control enabled (Windows 11), unsigned
+apps may be blocked outright with no override; use a signed build or a
+machine where it is off.
 
-CI: `.github/workflows/build.yml` builds on matching runners. It is
-**untested**.
+## CI
+
+`.github/workflows/build.yml` runs the same steps on `ubuntu-24.04`,
+`macos-14` (arm64), `macos-15-intel` (x64; GitHub retired `macos-13` in
+December 2025) and `windows-latest`, and uploads `out/make/**`. It is
+**untested** (no GitHub runner access from the development box).
+
+## Licences and dependency audit
+
+- Third-party notices: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md),
+  generated from the production dependency tree plus Electron, and shipped in
+  every package (`resources/THIRD_PARTY_NOTICES.md`). Packages also contain
+  Electron's `LICENSE` and `LICENSES.chromium.html`.
+- `npm audit --omit=dev` (everything that ships): **0 vulnerabilities**.
+- `npm audit` including development tools reports advisories only in build
+  tooling (Electron Forge 8 makers and their `glob`/`minimatch`/`temp`/`rimraf`
+  dependencies; `appdmg` → `image-size` ICNS parsing, used only when building a
+  `.dmg` from this repo's own files). None of it is in the app. npm's suggested
+  "fix" is a downgrade to Forge 7, which was not taken. Details:
+  [`docs/acceptance.md`](docs/acceptance.md#dependency-audit).
