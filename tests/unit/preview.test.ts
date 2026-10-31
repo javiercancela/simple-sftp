@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { TransportError } from '../../src/main/connections/errors';
@@ -86,6 +88,20 @@ describe('preview: magic bytes (decided in main)', () => {
     ['zip', bytes('PK', [3, 4])],
   ])('%s is not an image', (_n, b) => expect(detectImageMime(b)).toBeNull());
 
+  it.each([
+    ['sunset.png', 'image/png'],
+    ['night.jpg', 'image/jpeg'],
+    ['blink.gif', 'image/gif'],
+    ['meadow.webp', 'image/webp'],
+    ['tiles.bmp', 'image/bmp'],
+    ['favicon.ico', 'image/x-icon'],
+    ['dusk.avif', 'image/avif'],
+  ])('real fixture %s is %s', (f, mime) =>
+    expect(detectImageMime(readFileSync(join(__dirname, '..', 'fixtures', 'images', f)))).toBe(
+      mime,
+    ),
+  );
+
   it('the extension does not matter: a PNG named .jpg is a PNG', () => {
     expect(detectImageMime(PNG)).toBe('image/png');
   });
@@ -110,7 +126,12 @@ function fakeSession(opts: {
     lstat: () =>
       opts.stat instanceof Error
         ? Promise.reject(opts.stat)
-        : Promise.resolve({ type: 'file', size: 10, modifiedTime: null, ...opts.stat } as RemoteStat),
+        : Promise.resolve({
+            type: 'file',
+            size: 10,
+            modifiedTime: null,
+            ...opts.stat,
+          } as RemoteStat),
     createReadStream: () => {
       s.reads++;
       if (opts.readError) {
@@ -155,7 +176,12 @@ describe('PreviewService: cap, verification, supersede (fake session)', () => {
     const s = fakeSession({ chunks: [PNG.subarray(0, 5), PNG.subarray(5)] });
     const svc = new PreviewService({ getSession: () => s });
     const r = await svc.preview(SID, 'r1', '/a/../img.jpg');
-    expect(r).toMatchObject({ sessionId: SID, requestId: 'r1', path: '/img.jpg', mime: 'image/png' });
+    expect(r).toMatchObject({
+      sessionId: SID,
+      requestId: 'r1',
+      path: '/img.jpg',
+      mime: 'image/png',
+    });
     expect([...r.bytes]).toEqual([...PNG]);
     expect(r.bytes.byteOffset).toBe(0);
     expect(r.bytes.buffer.byteLength).toBe(PNG.length);
@@ -243,7 +269,7 @@ describe('preview: renderer request state', () => {
       path: '/a.png',
       size: 8,
       mime: 'image/png',
-      bytes: PNG,
+      bytes: new Uint8Array(PNG),
     },
   });
 

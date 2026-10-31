@@ -63,16 +63,20 @@ const SVG_SNIFF_BYTES = 4096;
  * anything that is not one of the supported formats; the extension is ignored.
  */
 export function detectImageMime(b: Uint8Array): PreviewMime | null {
-  if (
-    b.length >= 8 &&
-    [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((v, i) => b[i] === v)
-  )
+  if (b.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((v, i) => b[i] === v))
     return 'image/png';
   if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
   if (ascii(b, 0, 'GIF87a') || ascii(b, 0, 'GIF89a')) return 'image/gif';
   if (ascii(b, 0, 'RIFF') && ascii(b, 8, 'WEBP')) return 'image/webp';
   if (ascii(b, 0, 'BM') && b.length >= 18 && BMP_DIB_SIZES.has(u32le(b, 14))) return 'image/bmp';
-  if (b.length >= 6 && b[0] === 0 && b[1] === 0 && b[2] === 1 && b[3] === 0 && (b[4]! | b[5]!) !== 0)
+  if (
+    b.length >= 6 &&
+    b[0] === 0 &&
+    b[1] === 0 &&
+    b[2] === 1 &&
+    b[3] === 0 &&
+    (b[4]! | b[5]!) !== 0
+  )
     return 'image/x-icon';
   if (isAvif(b)) return 'image/avif';
   if (isSvg(b)) return 'image/svg+xml';
@@ -128,7 +132,7 @@ export interface ImagePreview {
   size: number;
   mime: PreviewMime;
   /** The file's bytes (at most PREVIEW_MAX_BYTES). Never written to disk. */
-  bytes: Uint8Array;
+  bytes: Uint8Array<ArrayBuffer>;
 }
 
 /** Preview-specific error codes (the transport codes also apply). */

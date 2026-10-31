@@ -8,6 +8,8 @@ interface Props {
   initialFocusId?: string;
   testId?: string;
   role?: 'dialog' | 'alertdialog';
+  className?: string;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLDialogElement>) => void;
 }
 
 /**
@@ -21,6 +23,8 @@ export function Dialog({
   initialFocusId,
   testId,
   role,
+  className,
+  onKeyDown,
 }: Props): React.JSX.Element {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = `dlg-${title.replace(/\W+/g, '-').toLowerCase()}`;
@@ -40,6 +44,8 @@ export function Dialog({
       aria-labelledby={titleId}
       role={role}
       data-testid={testId}
+      className={className}
+      onKeyDown={onKeyDown}
       onCancel={(e) => {
         e.preventDefault();
         onClose();

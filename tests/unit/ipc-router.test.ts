@@ -149,7 +149,10 @@ describe('IPC router', () => {
       IPC.remotePreviewImage,
       { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/x.png', maxBytes: 1e9 },
     ],
-    [IPC.remotePreviewImage, { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/\u0000.png' }],
+    [
+      IPC.remotePreviewImage,
+      { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/\u0000.png' },
+    ],
     [IPC.remoteCancelPreview, { sessionId: RANDOM_UUID, requestId: 7 }],
   ])('%s rejects malformed payload %j', async (channel, payload) => {
     const { router } = await setup(await tmp());

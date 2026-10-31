@@ -29,7 +29,9 @@ import {
   parentOf,
   resolveLocationInput,
 } from '../../shared/remote-path';
+import { isPreviewable } from '../../shared/preview';
 import { FileTable } from './FileTable';
+import { PreviewDialog } from './PreviewDialog';
 import { useBrowser, type BrowserApi, type BrowserSession } from './useBrowser';
 
 const LOADING_DELAY_MS = 150;
@@ -64,6 +66,11 @@ export function Browser({
   const [slowRequest, setSlowRequest] = useState<string | null>(null);
   const locationRef = useRef<HTMLInputElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<{
+    dir: string;
+    images: BrowseEntry[];
+    index: number;
+  } | null>(null);
 
   const view = b.view;
   const viewPath = view.kind === 'none' ? null : view.path;
@@ -117,6 +124,32 @@ export function Browser({
   const selectedEntries = visible.filter((e) => selection.selected.has(e.name));
   const selectedFiles = selectedEntries.filter((e) => e.type === 'file').length;
 
+  // Image preview (version 2): the single selected item, else the active row.
+  const previewTarget =
+    selectedEntries.length === 1
+      ? selectedEntries[0]
+      : selection.active !== null
+        ? visible[selection.active]
+        : undefined;
+  const canPreview = view.kind === 'ready' && !!previewTarget && isPreviewable(previewTarget);
+  const openPreview = (e: BrowseEntry | undefined): void => {
+    if (view.kind !== 'ready' || !e) return;
+    if (!isPreviewable(e)) {
+      setMessage(
+        `“${displayName(e.name)}” can't be previewed. Only image files (PNG, JPEG, GIF, WebP, SVG, BMP, ICO, AVIF) can.`,
+      );
+      return;
+    }
+    const images = visible.filter(isPreviewable);
+    setMessage(null);
+    setPreview({ dir: view.path, images, index: Math.max(0, images.indexOf(e)) });
+  };
+  const closePreview = (lastName: string): void => {
+    setPreview(null);
+    const i = names.indexOf(lastName);
+    if (i >= 0) setSelection({ selected: new Set([lastName]), active: i, anchor: i });
+  };
+
   const open = (e: BrowseEntry): void => {
     if (view.kind !== 'ready') return;
     const shown = displayName(e.name);
@@ -149,6 +182,9 @@ export function Browser({
     } else if (ev.key === ' ' && toggle) {
       ev.preventDefault();
       setSelection((s) => toggleActive(s, names));
+    } else if (ev.key === ' ' && !ev.shiftKey && !ev.altKey && !toggle) {
+      ev.preventDefault();
+      openPreview(previewTarget);
     } else if (ev.key === 'Enter' && selection.active !== null) {
       ev.preventDefault();
       const e = visible[selection.active];
@@ -401,6 +437,15 @@ export function Browser({
         <span className="spacer" />
         <button
           type="button"
+          data-testid="preview-button"
+          disabled={!canPreview || !!loadingState}
+          title={canPreview ? 'Preview this image (Space)' : 'Select an image file to preview it'}
+          onClick={() => openPreview(previewTarget)}
+        >
+          Preview
+        </button>
+        <button
+          type="button"
           className="primary"
           data-testid="download-button"
           disabled={view.kind !== 'ready' || !!loadingState || selectedEntries.length === 0}
@@ -415,6 +460,16 @@ export function Browser({
         </button>
       </div>
       <div className="browser-body">{body}</div>
+      {preview && (
+        <PreviewDialog
+          sessionId={session.sessionId}
+          dir={preview.dir}
+          images={preview.images}
+          startIndex={preview.index}
+          onClose={closePreview}
+          onDownload={(path) => onDownload([path])}
+        />
+      )}
       <div className="browser-status" data-testid="browser-status">
         {view.kind === 'ready' && !loadingState && (
           <span data-testid="item-count">

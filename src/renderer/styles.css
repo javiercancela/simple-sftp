@@ -799,3 +799,80 @@ button.link {
   padding-left: 18px;
   word-break: break-all;
 }
+
+/* ---------- image preview (version 2) ---------- */
+dialog.preview-dialog {
+  width: min(1100px, 94vw);
+  height: min(860px, 90vh);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+dialog.preview-dialog:not([open]) {
+  display: none;
+}
+dialog.preview-dialog h2 {
+  margin-bottom: 2px;
+  word-break: break-all;
+}
+.preview-meta {
+  margin: 0 0 10px;
+}
+.preview-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  /* Checkerboard so transparent images are visible (pure CSS, no URLs). */
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #e6e6e6 25%, transparent 25%),
+    linear-gradient(-45deg, #e6e6e6 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e6e6e6 75%),
+    linear-gradient(-45deg, transparent 75%, #e6e6e6 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+.preview-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.preview-stage[data-state='error'],
+.preview-stage[data-state='loading'] {
+  background: var(--bg);
+}
+.preview-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-2);
+  text-align: center;
+  padding: 24px;
+}
+.preview-error h3 {
+  margin: 0;
+  color: var(--fg);
+  font-size: 15px;
+}
+.preview-error p {
+  margin: 0;
+  max-width: 420px;
+}
+.preview-actions {
+  align-items: center;
+  margin-top: 12px;
+}
+.preview-actions .spacer {
+  flex: 1;
+}

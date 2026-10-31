@@ -9,11 +9,7 @@
 // One preview at a time per session: a newer request (or a cancel) aborts the
 // older read and the older request resolves to CANCELLED.
 import type { Readable } from 'node:stream';
-import {
-  PREVIEW_MAX_BYTES,
-  detectImageMime,
-  type ImagePreview,
-} from '../../shared/preview';
+import { PREVIEW_MAX_BYTES, detectImageMime, type ImagePreview } from '../../shared/preview';
 import { normalizeRemotePath } from '../../shared/remote-path';
 import { formatSize } from '../../shared/browse';
 import { TransportError, isTransportError } from './errors';
@@ -51,7 +47,8 @@ export class PreviewService {
 
   async preview(sessionId: string, requestId: string, rawPath: string): Promise<ImagePreview> {
     const session = this.deps.getSession(sessionId);
-    if (!session) throw new TransportError('DISCONNECTED', 'Not connected to this server any more.');
+    if (!session)
+      throw new TransportError('DISCONNECTED', 'Not connected to this server any more.');
     const path = normalizeRemotePath(rawPath);
 
     this.active.get(sessionId)?.abort();
@@ -98,7 +95,10 @@ export class PreviewService {
     } catch (err) {
       if (!live()) throw superseded();
       if (closed || this.deps.getSession(sessionId) !== session)
-        throw new TransportError('DISCONNECTED', 'The connection closed while loading the preview.');
+        throw new TransportError(
+          'DISCONNECTED',
+          'The connection closed while loading the preview.',
+        );
       throw classify(err);
     } finally {
       offClose();
@@ -119,7 +119,7 @@ export class PreviewService {
     session: SftpSession,
     path: string,
     track: (s: Readable) => void,
-  ): Promise<Uint8Array> {
+  ): Promise<Uint8Array<ArrayBuffer>> {
     const max = this.max;
     return new Promise((resolve, reject) => {
       const s = session.createReadStream(path);
