@@ -1,0 +1,28 @@
+diff --git a/node_modules/@electerm/ssh2/lib/protocol/Protocol.js b/node_modules/@electerm/ssh2/lib/protocol/Protocol.js
+index 29674cc..7bf68d0 100644
+--- a/node_modules/@electerm/ssh2/lib/protocol/Protocol.js
++++ b/node_modules/@electerm/ssh2/lib/protocol/Protocol.js
+@@ -683,10 +683,19 @@ class Protocol {
+     // Determine the base signing algorithm (upgrading RSA if needed)
+     let signAlgo = keyType;
+     if (keyType === 'ssh-rsa') {
+-      for (const algo of ['rsa-sha2-256', 'rsa-sha2-512']) {
+-        if (this._remoteHostKeyAlgorithms.includes(algo)) {
+-          signAlgo = algo;
+-          break;
++      // sftp-client patch: honour the SHA-2 algorithm the client negotiated
++      // from the server's server-sig-algs (passed in as keyAlgo). The original
++      // code guessed from the server's *host key* algorithms, which falls back
++      // to SHA-1 ssh-rsa-cert-v01 on servers without an RSA host key and
++      // mislabels the signature on servers that only accept rsa-sha2-512.
++      if (keyAlgo === 'rsa-sha2-256' || keyAlgo === 'rsa-sha2-512') {
++        signAlgo = keyAlgo;
++      } else {
++        for (const algo of ['rsa-sha2-256', 'rsa-sha2-512']) {
++          if (this._remoteHostKeyAlgorithms.includes(algo)) {
++            signAlgo = algo;
++            break;
++          }
+         }
+       }
+     }

@@ -1,0 +1,57 @@
+{
+  "name": "sftp-client",
+  "productName": "SimpleSFTP",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Simple SFTP desktop client (download-only)",
+  "keywords": [],
+  "license": "UNLICENSED",
+  "author": "Javier Cancela",
+  "main": ".vite/build/main.cjs",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint --deny-warnings && oxfmt --check",
+    "lint:fix": "oxlint --fix && oxfmt --write",
+    "test": "vitest run tests/unit tests/integration",
+    "test:integration": "vitest run tests/integration",
+    "smoke:packaged": "vitest run tests/smoke",
+    "postinstall": "patch-package --error-on-fail",
+    "test:unit": "vitest run tests/unit"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-deb": "8.0.1",
+    "@electron-forge/maker-dmg": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1",
+    "@electron-forge/maker-zip": "8.0.1",
+    "@electron-forge/plugin-auto-unpack-natives": "8.0.1",
+    "@electron-forge/plugin-fuses": "8.0.1",
+    "@electron-forge/plugin-vite": "8.0.1",
+    "@electron/fuses": "2.1.3",
+    "@types/electron-squirrel-startup": "1.0.2",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "45.2.1",
+    "oxfmt": "0.41.0",
+    "oxlint": "1.90.0",
+    "patch-package": "8.0.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "@electerm/ssh2": "1.23.0",
+    "electron-squirrel-startup": "1.0.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.4": true
+  }
+}

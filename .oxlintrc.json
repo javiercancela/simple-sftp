@@ -1,0 +1,372 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "no-console": "off",
+    "react/react-in-jsx-scope": "off",
+    "import/no-unassigned-import": [
+      "warn",
+      {
+        "allow": ["**/*.css"]
+      }
+    ]
+  },
+  "ignorePatterns": ["out/**", ".vite/**", "tests/.tmp/**", "node_modules/**"],
+  "overrides": [
+    {
+      "files": ["src/shared/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "message": "Electron APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "fs",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "fs/promises",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "path",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "os",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "crypto",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "child_process",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "net",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "tls",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "http",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "https",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "stream",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "stream/promises",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "events",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "util",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "buffer",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "url",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "worker_threads",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "zlib",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "dns",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "readline",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "process",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["node:*", "node:*/**"],
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "group": [
+                  "**/main/**",
+                  "**/renderer/**",
+                  "**/preload/**",
+                  "@electerm/*",
+                  "react",
+                  "react-dom",
+                  "react-dom/*"
+                ],
+                "message": "src/shared must stay pure (spec 9.3)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/renderer/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "message": "Electron APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "fs",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "fs/promises",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "path",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "os",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "crypto",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "child_process",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "net",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "tls",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "http",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "https",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "stream",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "stream/promises",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "events",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "util",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "buffer",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "url",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "worker_threads",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "zlib",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "dns",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "readline",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "process",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["node:*", "node:*/**"],
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "group": ["**/main/**", "**/preload/**", "@electerm/*"],
+                "message": "Renderer imports only renderer/shared code (spec 9.3)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/preload/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "fs",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "fs/promises",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "path",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "os",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "crypto",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "child_process",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "net",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "tls",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "http",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "https",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "stream",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "stream/promises",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "events",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "util",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "buffer",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "url",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "worker_threads",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "zlib",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "dns",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "readline",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "name": "process",
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["node:*", "node:*/**"],
+                "message": "Node APIs are not allowed in this layer (spec 9.3)."
+              },
+              {
+                "group": ["**/main/**", "**/renderer/**", "@electerm/*"],
+                "message": "Preload imports shared contracts and the Electron bridge only (spec 9.3)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/main/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [],
+            "patterns": [
+              {
+                "group": ["**/renderer/**"],
+                "message": "Main must not import renderer code (spec 9.3)."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

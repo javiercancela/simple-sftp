@@ -1,0 +1,46 @@
+# UNTESTED: written on a Linux box without access to GitHub runners.
+# Builds and smoke-tests on matching-OS runners (spec 11). Unsigned dev builds.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04 # Linux x64: .deb + .zip
+          - os: macos-14 # macOS arm64: .dmg + .zip
+          - os: macos-13 # macOS x64: .dmg + .zip
+          - os: windows-latest # Windows x64: Squirrel installer
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install OpenSSH server + xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y openssh-server xvfb
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Unit + OpenSSH integration tests
+        if: runner.os != 'Windows'
+        run: npm test
+      - name: Unit tests only (no unprivileged sshd fixture on Windows yet)
+        if: runner.os == 'Windows'
+        run: npm run test:unit
+      - run: npm run make
+      - name: Packaged transport smoke
+        if: runner.os != 'Windows'
+        run: npm run smoke:packaged
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simple-sftp-${{ matrix.os }}
+          path: out/make/**
