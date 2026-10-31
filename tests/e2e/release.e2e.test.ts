@@ -8,7 +8,7 @@
 //    process tree is gone and the server's per-connection processes end.
 import { execFileSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -40,7 +40,6 @@ let certServer: SshdInstance;
 let keyServer: SshdInstance;
 let app: ElectronApplication | null = null;
 let page: Page;
-let ROOT = '';
 const PROFILE_CERT = randomUUID();
 const PROFILE_KEY = randomUUID();
 const metrics: Record<string, unknown> = {};
@@ -129,7 +128,6 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
       await mkdir(d, { recursive: true });
     await writeFile(join(FILES, 'notes.txt'), 'release validation\n');
     await writeFile(join(FILES, 'big.bin'), randomBytes(256 * MiB));
-    ROOT = realpathSync(FILES);
     keygen(K('host'), 'ed25519');
     keygen(K('ca'), 'ed25519');
     keygen(K('ed'), 'ed25519');
