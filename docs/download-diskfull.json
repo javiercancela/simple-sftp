@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-10-31T14:02:42.625Z",
+  "measuredAt": "2026-10-31T14:13:16.372Z",
   "method": "unprivileged user+mount namespace (unshare -Urm) with an 8 MiB tmpfs mounted over the download folder; real ENOSPC from the kernel",
   "result": "8519680 of 67108864 bytes written before ENOSPC on an 8 MiB tmpfs; error \"The disk is full. Free some space and retry.\"; free after cleanup 8.0 MiB"
 }
