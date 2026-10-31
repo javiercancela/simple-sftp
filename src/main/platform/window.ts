@@ -1,5 +1,6 @@
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, screen, session } from 'electron';
 import path from 'node:path';
+import type { WindowState } from '../../shared/settings';
 
 const PROD_CSP = [
   "default-src 'none'",
@@ -14,11 +15,33 @@ const PROD_CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-export function createMainWindow(opts: { show: boolean }): BrowserWindow {
+export const RENDERER_INDEX = (): string =>
+  path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+
+function visible(state: WindowState): boolean {
+  if (state.x === undefined || state.y === undefined) return false;
+  const { x, y, width } = state;
+  return screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    // Title bar area must be on some display.
+    return (
+      x + width > a.x + 40 && x < a.x + a.width - 40 && y >= a.y - 10 && y < a.y + a.height - 40
+    );
+  });
+}
+
+export function createMainWindow(opts: {
+  show: boolean;
+  state: WindowState | null;
+}): BrowserWindow {
+  const s = opts.state;
   const win = new BrowserWindow({
-    width: 1000,
-    height: 700,
-    show: opts.show,
+    width: s?.width ?? 1100,
+    height: s?.height ?? 720,
+    ...(s && visible(s) && s.x !== undefined && s.y !== undefined ? { x: s.x, y: s.y } : {}),
+    minWidth: 640,
+    minHeight: 420,
+    show: false,
     title: 'SimpleSFTP',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -26,14 +49,32 @@ export function createMainWindow(opts: { show: boolean }): BrowserWindow {
       contextIsolation: true,
       sandbox: true,
       webviewTag: false,
+      spellcheck: false,
     },
   });
+  if (opts.show) {
+    win.once('ready-to-show', () => {
+      if (s?.maximized) win.maximize();
+      win.show();
+    });
+  }
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     void win.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    void win.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+    void win.loadFile(RENDERER_INDEX());
   }
   return win;
+}
+
+export function captureWindowState(win: BrowserWindow): WindowState {
+  const b = win.getNormalBounds();
+  return {
+    x: Math.round(b.x),
+    y: Math.round(b.y),
+    width: Math.max(400, Math.round(b.width)),
+    height: Math.max(300, Math.round(b.height)),
+    maximized: win.isMaximized(),
+  };
 }
 
 /** Spec 9.2: production CSP, no unexpected navigation or new windows. */
@@ -46,12 +87,12 @@ export function hardenWebContents(): void {
     contents.on('will-attach-webview', (event) => event.preventDefault());
   });
   void app.whenReady().then(() => {
-    if (!app.isPackaged) return; // Vite dev server needs inline scripts/HMR.
+    session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) return; // Vite dev server needs inline scripts/HMR.
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({
         responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [PROD_CSP] },
       });
     });
-    session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
   });
 }

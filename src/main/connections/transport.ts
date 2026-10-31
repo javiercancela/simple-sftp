@@ -126,10 +126,26 @@ class Session implements SftpSession {
     readonly hostKey: HostKeyInfo,
   ) {
     client.on('error', (err: Error & { level?: string }) => {
-      this.closeError = classifyClientError(err);
+      if (this.disconnecting) return;
+      // Keepalive timeouts, resets, protocol errors after login: the link died.
+      this.closeError ??= new TransportError(
+        'CONNECTION_LOST',
+        'The connection to the server was lost.',
+        err.message,
+      );
     });
-    client.on('close', () => this.markClosed());
+    client.on('close', () => {
+      if (!this.disconnecting) {
+        this.closeError ??= new TransportError(
+          'CONNECTION_LOST',
+          'The server closed the connection.',
+        );
+      }
+      this.markClosed();
+    });
   }
+
+  private disconnecting = false;
 
   private markClosed(): void {
     if (this.closed) return;
@@ -191,6 +207,7 @@ class Session implements SftpSession {
 
   disconnect(): Promise<void> {
     if (this.closed) return Promise.resolve();
+    this.disconnecting = true;
     return new Promise((resolve) => {
       this.onClose(() => resolve());
       try {
@@ -224,6 +241,17 @@ export function connect(opts: ConnectOptions): Promise<SftpSession> {
     let settled = false;
     let hostKey: HostKeyInfo | undefined;
     let hostFailure: TransportError | undefined;
+    let socketConnected = false;
+    let handshaken = false;
+    // OpenSSH >= 9.8 PerSourcePenalties (and MaxStartups) accept the TCP
+    // connection and drop it before the SSH handshake.
+    const refusedEarly = (): TransportError | undefined =>
+      socketConnected && !handshaken && !hostKey
+        ? new TransportError(
+            'SERVER_REFUSED',
+            'The server closed the connection before the SSH handshake. It may be temporarily blocking this address after failed logins, or limiting connections. Wait a minute and try again.',
+          )
+        : undefined;
 
     // Connection timer that pauses while awaiting the user's trust decision.
     let remaining = timeoutMs;
@@ -307,13 +335,27 @@ export function connect(opts: ConnectOptions): Promise<SftpSession> {
     if (opts.credentials.certificate) config.certificate = opts.credentials.certificate.blob;
     if (opts.debug) config.debug = opts.debug;
 
+    client.on('connect', () => {
+      socketConnected = true;
+    });
+    client.on('handshake', () => {
+      handshaken = true;
+    });
     client.on('error', (err: Error & { level?: string }) => {
       if (hostFailure) return fail(hostFailure);
+      const level = err.level ?? '';
+      if (level === 'client-socket' || level === 'protocol') {
+        const early = refusedEarly();
+        if (early) return fail(early);
+      }
       fail(classifyClientError(err));
     });
     client.on('close', () => {
       if (hostFailure) return fail(hostFailure);
-      fail(new TransportError('NETWORK', 'The connection closed before it was ready.'));
+      fail(
+        refusedEarly() ??
+          new TransportError('NETWORK', 'The connection closed before it was ready.'),
+      );
     });
     client.on('ready', () => {
       client.sftp((err, sftp) => {

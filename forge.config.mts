@@ -7,7 +7,12 @@ import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
+// Smoke builds (scripts/smoke-packaged.mjs) compile in the transport smoke
+// hook and go to their own folder so they never mix with release artifacts.
+const smokeBuild = process.env.SFTP_CLIENT_SMOKE_BUILD === '1';
+
 const config: ForgeConfig = {
+  outDir: smokeBuild ? 'out-smoke' : 'out',
   packagerConfig: {
     asar: true,
     name: 'SimpleSFTP',

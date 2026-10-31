@@ -144,9 +144,11 @@ vite.config.ts.timestamp-*
 
 # Electron-Forge
 out/
+out-smoke/
 
 # Throwaway test keys, certs, sshd configs and downloads (generated at test time)
 tests/.tmp/
 .vite/
 out/
+out-smoke/
 .tools/

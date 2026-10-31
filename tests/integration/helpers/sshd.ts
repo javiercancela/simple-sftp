@@ -67,6 +67,8 @@ export interface SshdConfig {
   trustedUserCa?: string;
   principals?: string[];
   pubkeyAcceptedAlgorithms?: string;
+  /** Default 'no' (tests fail auth on purpose); set to exercise penalties. */
+  perSourcePenalties?: string;
 }
 
 export class SshdInstance {
@@ -105,7 +107,7 @@ export class SshdInstance {
       'PermitTTY no',
       'LogLevel DEBUG3',
       // OpenSSH >= 9.8 penalizes sources after failed auths; tests fail on purpose.
-      'PerSourcePenalties no',
+      `PerSourcePenalties ${c.perSourcePenalties ?? 'no'}`,
       'Subsystem sftp internal-sftp',
       `ForceCommand internal-sftp -d ${c.sftpRoot}`,
     ];
@@ -162,6 +164,10 @@ export class SshdInstance {
         rej(new Error(`sshd exited (${code}):\n${this.logBuf}`));
       });
     });
+  }
+
+  get pid(): number | undefined {
+    return this.proc?.pid;
   }
 
   async stop(): Promise<void> {

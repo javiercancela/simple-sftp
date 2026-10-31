@@ -6,8 +6,368 @@
     'Segoe UI',
     Roboto,
     sans-serif;
+  font-size: 14px;
+  --bg: #ffffff;
+  --bg-2: #f4f5f7;
+  --bg-3: #e8eaee;
+  --fg: #1c1e21;
+  --fg-2: #5b616b;
+  --border: #d4d7dd;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --sel: #dbe7ff;
+  --danger: #b42318;
+  --ok: #15803d;
+  --warn: #a15c07;
+  --focus: #2563eb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1d1f23;
+    --bg-2: #25282d;
+    --bg-3: #30343a;
+    --fg: #e7e9ec;
+    --fg-2: #a2a8b2;
+    --border: #3b4048;
+    --accent: #5b8def;
+    --accent-fg: #0b1020;
+    --sel: #2b3a58;
+    --danger: #f97066;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --focus: #8fb3ff;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
 }
 body {
-  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+button {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--bg-3);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.1);
+}
+button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+input[type='text'],
+input[type='password'],
+select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 100%;
+}
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+.small {
+  font-size: 12px;
+}
+.hint {
+  color: var(--fg-2);
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.loading {
   padding: 2rem;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-width, 260px) 1fr;
+  height: 100%;
+}
+.sidebar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+}
+.sidebar-header h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-2);
+  margin: 0;
+}
+.sidebar-empty {
+  padding: 0 12px;
+  flex: 1;
+}
+.profile-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  flex: 1;
+}
+.profile-list li {
+  display: flex;
+  flex-direction: column;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: default;
+  user-select: none;
+}
+.profile-list li.selected {
+  background: var(--sel);
+}
+.profile-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-sub {
+  color: var(--fg-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.active-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  margin-left: 6px;
+}
+.sidebar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.topbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.topbar h1 {
+  font-size: 16px;
+  margin: 0;
+}
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+}
+.status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-3);
+}
+.status-connected {
+  color: var(--ok);
+}
+.status-failed {
+  color: var(--danger);
+}
+.status-awaitingHostTrust,
+.status-awaitingPassphrase,
+.status-connecting {
+  color: var(--warn);
+}
+.remote-home {
+  color: var(--fg-2);
+  font-size: 12px;
+}
+.panel {
+  flex: 1;
+  display: flex;
+}
+.empty-state {
+  margin: auto;
+  text-align: center;
+  max-width: 440px;
+  padding: 24px;
+}
+.notice,
+.error-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+}
+.error-panel {
+  border-color: var(--danger);
+}
+.error-main p {
+  margin: 6px 0;
+}
+.form-error,
+.field-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+.form-error {
+  margin: 12px 16px 0;
+}
+
+dialog {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 18px 20px;
+  width: min(560px, 92vw);
+  max-height: 90vh;
+  overflow: auto;
+}
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+dialog h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+.field {
+  margin: 0 0 12px;
+  border: 0;
+  padding: 0;
+}
+.field > label,
+.field > legend {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.field-row {
+  display: flex;
+  gap: 6px;
+}
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 10px;
+}
+.radio {
+  display: inline-flex;
+  gap: 6px;
+  margin-right: 16px;
+  align-items: center;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0;
+}
+.kv dt {
+  color: var(--fg-2);
+}
+.kv dd {
+  margin: 0;
+}
+table.hosts {
+  width: 100%;
+  border-collapse: collapse;
+}
+table.hosts th,
+table.hosts td {
+  text-align: left;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.inline-confirm {
+  display: inline-flex;
+  gap: 6px;
 }

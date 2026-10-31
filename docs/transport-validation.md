@@ -82,3 +82,19 @@ alternative" route in spec 3.2. Alternatives considered, not built:
 - A plain RSA key against a server that advertises no `server-sig-algs` may
   fall back to SHA-1 `ssh-rsa` inside the library. This was not tested; modern
   OpenSSH rejects it anyway.
+
+## Milestone 2 additions
+
+- **PerSourcePenalties / early drops.** When OpenSSH accepts TCP and closes the
+  connection before the SSH handshake (OpenSSH >= 9.8 `PerSourcePenalties`, or
+  `MaxStartups`), the transport now reports `SERVER_REFUSED` with a "wait and
+  try again" message instead of a generic `NETWORK` error. Proven in
+  `tests/integration/connection-manager.test.ts` against a real sshd with
+  `PerSourcePenalties authfail:30s noauth:30s min:1s`: one rejected login, then
+  the next attempt is `SERVER_REFUSED`.
+- **Connection lost.** Errors or a close after the session is ready are
+  `CONNECTION_LOST` (unless the user disconnected). Proven by freezing the
+  server's session processes (SIGSTOP) with a 500 ms keepalive: the app reports
+  `CONNECTION_LOST` after the missed keepalives. Production uses 30 s × 3.
+- **Timeouts.** 20 s connect timeout, paused while the passphrase or host-trust
+  dialog is open (proven with a 1.5 s timeout and 2.5 s waits in each dialog).

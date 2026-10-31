@@ -50,13 +50,20 @@ export async function runTransportSmoke(configPath: string, win: BrowserWindow):
       if (!win.webContents.isLoading()) resolve();
       else win.webContents.once('did-finish-load', () => resolve());
     });
-    const title = await win.webContents.executeJavaScript(
-      'document.querySelector("h1")?.textContent ?? ""',
-    );
+    // React mounts after did-finish-load; wait for the app shell to render.
+    let title = '';
+    for (let i = 0; i < 50 && !title; i++) {
+      title = String(
+        await win.webContents.executeJavaScript(
+          'document.querySelector(".app [data-testid=active-server]")?.textContent ?? ""',
+        ),
+      );
+      if (!title) await new Promise((r) => setTimeout(r, 200));
+    }
     steps.push({
       label: 'renderer-loaded',
-      ok: title === 'SimpleSFTP',
-      detail: `h1=${String(title)}`,
+      ok: title !== '',
+      detail: `active-server=${title}`,
     });
 
     for (const login of cfg.logins) {

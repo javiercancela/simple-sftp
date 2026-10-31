@@ -1,26 +1,21 @@
-import { app, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { IPC, type AppInfo, type IpcResult } from '../../shared/ipc-contract';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import type { InvokeChannel } from '../../shared/ipc-contract';
+import type { createIpcRouter, SenderInfo } from './router';
 
-/** Only accept calls from our own top-level renderer frame. */
-function isTrustedSender(event: IpcMainInvokeEvent): boolean {
-  const url = event.senderFrame?.url ?? '';
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) return url.startsWith(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  return url.startsWith('file://') && event.senderFrame?.parent === null;
+function senderInfo(event: IpcMainInvokeEvent): SenderInfo {
+  const frame = event.senderFrame;
+  return {
+    frameUrl: frame?.url ?? '',
+    isMainFrame: !!frame && frame.parent === null,
+    webContentsId: event.sender.id,
+  };
 }
 
-export function registerIpcHandlers(): void {
-  ipcMain.handle(IPC.appGetInfo, (event): IpcResult<AppInfo> => {
-    if (!isTrustedSender(event))
-      return { ok: false, error: { code: 'FORBIDDEN', message: 'Untrusted sender.' } };
-    return {
-      ok: true,
-      value: {
-        name: app.getName(),
-        version: app.getVersion(),
-        electron: process.versions.electron,
-        platform: process.platform,
-        arch: process.arch,
-      },
-    };
-  });
+/** Register exactly the allowlisted channels; nothing generic is exposed. */
+export function registerIpcHandlers(router: ReturnType<typeof createIpcRouter>): void {
+  for (const channel of router.channels) {
+    ipcMain.handle(channel, (event, payload: unknown) =>
+      router.invoke(channel satisfies InvokeChannel, senderInfo(event), payload),
+    );
+  }
 }

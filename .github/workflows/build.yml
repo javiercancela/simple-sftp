@@ -37,7 +37,10 @@ jobs:
         if: runner.os == 'Windows'
         run: npm run test:unit
       - run: npm run make
-      - name: Packaged transport smoke
+      - name: Electron UI end-to-end (real sshd)
+        if: runner.os != 'Windows'
+        run: npm run test:e2e
+      - name: Packaged smoke (smoke build + release artifact checks)
         if: runner.os != 'Windows'
         run: npm run smoke:packaged
       - uses: actions/upload-artifact@v4
