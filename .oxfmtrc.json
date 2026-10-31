@@ -2,5 +2,13 @@
   "singleQuote": true,
   "printWidth": 100,
   "sortPackageJson": false,
-  "ignorePatterns": ["SPEC.md", "THIRD_PARTY_NOTICES.md", "out-smoke/**", "patches/**", "tests/.tmp/**", "out/**", ".vite/**"]
+  "ignorePatterns": [
+    "SPEC.md",
+    "THIRD_PARTY_NOTICES.md",
+    "out-smoke/**",
+    "patches/**",
+    "tests/.tmp/**",
+    "out/**",
+    ".vite/**"
+  ]
 }
