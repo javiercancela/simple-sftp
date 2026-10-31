@@ -1,9 +1,9 @@
 {
-  "measuredAt": "2026-10-31T18:42:24.761Z",
+  "measuredAt": "2026-10-31T18:45:53.923Z",
   "environment": "Linux, DownloadService in Node against OpenSSH 10.0p2 sshd on 127.0.0.1",
   "zeroSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "ordinarySha256": "60d1c0a733739e7794180fe9d8b63f9673764580b544579b6cfbafa1ff82848c",
-  "hugeSha256": "local 83daaec7e53b3e1a9ad267be706a20e91e18e01213ce1690864e5163becd4762 = remote 83daaec7e53b3e1a9ad267be706a20e91e18e01213ce1690864e5163becd4762",
-  "huge": "4.005 GiB in 17.1 s (240 MiB/s); RSS baseline 105 MiB, peak 167 MiB (+63 MiB)",
-  "cancelFrozen_ms": "30"
+  "ordinarySha256": "0273b12e64df630464d9f2cf4321d2ca1ab0206ee0ac3fedb58ef54a7b32945d",
+  "hugeSha256": "local be61a95642c7164b3f403270bb85f12fa4f54051fa756e0fa84b92453c39c94b = remote be61a95642c7164b3f403270bb85f12fa4f54051fa756e0fa84b92453c39c94b",
+  "huge": "4.005 GiB in 14.6 s (281 MiB/s); RSS baseline 112 MiB, peak 169 MiB (+57 MiB)",
+  "cancelFrozen_ms": "21"
 }
