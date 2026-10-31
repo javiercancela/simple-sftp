@@ -210,6 +210,50 @@ describe.skipIf(!bin || apps.length === 0)('smoke-flavored package: transport sm
   }
 });
 
+describe.skipIf(process.platform === 'win32' || releaseApps.length === 0)(
+  'release artifacts: file permissions',
+  () => {
+    it('no group- or world-writable files in the package, the .deb or the portable zip', () => {
+      const bad: string[] = [];
+      const pkgDir = join(ROOT_DIR, 'out', `SimpleSFTP-${process.platform}-${process.arch}`);
+      if (existsSync(pkgDir)) {
+        const out = execFileSync('find', [pkgDir, '!', '-type', 'l', '-perm', '/022']).toString();
+        bad.push(...out.split('\n').filter(Boolean));
+      }
+      const make = join(ROOT_DIR, 'out', 'make');
+      const found = existsSync(make)
+        ? execFileSync('find', [
+            make,
+            '-type',
+            'f',
+            '(',
+            '-name',
+            '*.deb',
+            '-o',
+            '-name',
+            '*.zip',
+            ')',
+          ])
+            .toString()
+            .split('\n')
+            .filter(Boolean)
+        : [];
+      for (const f of found) {
+        const listing = f.endsWith('.deb')
+          ? execFileSync('dpkg-deb', ['-c', f]).toString()
+          : execFileSync('unzip', ['-Z', f]).toString();
+        for (const line of listing.split('\n')) {
+          const mode = line.split(/\s+/)[0] ?? '';
+          // ls-style mode: positions 5 (group w) and 8 (other w); links excluded.
+          if (/^[-d]/.test(mode) && (mode[5] === 'w' || mode[8] === 'w'))
+            bad.push(`${f.split('/').pop()}: ${line.trim()}`);
+        }
+      }
+      expect(bad).toEqual([]);
+    });
+  },
+);
+
 // File level: runs after both groups below (the release group also writes into TMP).
 afterAll(async () => {
   if (!process.env.KEEP_TEST_TMP) await rm(TMP, { recursive: true, force: true });

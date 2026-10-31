@@ -15,7 +15,7 @@ jobs:
         include:
           - os: ubuntu-24.04 # Linux x64: .deb + .zip
           - os: macos-14 # macOS arm64: .dmg + .zip
-          - os: macos-13 # macOS x64: .dmg + .zip
+          - os: macos-15-intel # macOS x64: .dmg + .zip (macos-13 was retired Dec 2025; Intel runners end Aug 2027)
           - os: windows-latest # Windows x64: Squirrel installer
     runs-on: ${{ matrix.os }}
     steps:

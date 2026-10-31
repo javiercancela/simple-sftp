@@ -6,6 +6,22 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import { chmod, lstat, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+
+/**
+ * Electron's release zip stores world-writable modes (0777/0666) and they are
+ * copied into the package, the .deb and the portable zip as-is. An installed
+ * executable that any local user can overwrite is a privilege problem, so
+ * clear group/other write bits on everything (symlinks are left alone).
+ */
+async function removeGroupOtherWrite(path: string): Promise<void> {
+  const st = await lstat(path);
+  if (st.isSymbolicLink()) return;
+  if (st.mode & 0o022) await chmod(path, st.mode & 0o7755);
+  if (st.isDirectory())
+    for (const e of await readdir(path)) await removeGroupOtherWrite(join(path, e));
+}
 
 // Smoke builds (scripts/smoke-packaged.mjs) compile in the transport smoke
 // hook and go to their own folder so they never mix with release artifacts.
@@ -22,6 +38,12 @@ const config: ForgeConfig = {
     extraResource: ['THIRD_PARTY_NOTICES.md'],
   },
   rebuildConfig: {},
+  hooks: {
+    postPackage: async (_config, { outputPaths, platform }) => {
+      if (platform === 'win32') return;
+      for (const p of outputPaths) await removeGroupOtherWrite(p);
+    },
+  },
   makers: [
     // Windows x64 installer (unsigned dev build).
     new MakerSquirrel({ name: 'SimpleSFTP' }),
