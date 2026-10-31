@@ -227,6 +227,8 @@ describe.skipIf(releaseApps.length === 0)('release artifacts: smoke hook compile
       expect(existsSync(join(exe, '..', 'resources', 'app.asar.unpacked', '.vite', 'build'))).toBe(
         false,
       );
+      // Licence notices ship with the app.
+      expect(existsSync(join(exe, '..', 'resources', 'THIRD_PARTY_NOTICES.md'))).toBe(true);
 
       const outDir = join(TMP, 'release', app.label.replace(/[^a-z0-9]+/gi, '_'));
       await mkdir(outDir, { recursive: true });

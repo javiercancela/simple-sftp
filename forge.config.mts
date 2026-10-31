@@ -18,6 +18,8 @@ const config: ForgeConfig = {
     name: 'SimpleSFTP',
     executableName: 'simple-sftp',
     appBundleId: 'dev.javiercancela.simplesftp',
+    // Licence notices for bundled dependencies (generated; see scripts/).
+    extraResource: ['THIRD_PARTY_NOTICES.md'],
   },
   rebuildConfig: {},
   makers: [
