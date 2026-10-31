@@ -17,6 +17,9 @@ private key, optionally paired with an OpenSSH user certificate. See
 5. Release validation: acceptance status per criterion in
    [`docs/acceptance.md`](docs/acceptance.md).
 
+Version 2 (outside `SPEC.md`): [image preview](#image-preview-version-2-outside-specmd),
+with one documented exception to spec 7.2.
+
 ### Browsing keyboard shortcuts
 
 | Keys                                | Action                                    |
@@ -25,6 +28,7 @@ private key, optionally paired with an OpenSSH user certificate. See
 | Ctrl/⌘ + arrow, then Ctrl/⌘ + Space | Move without selecting, toggle a row      |
 | Ctrl/⌘ + A, Esc                     | Select all visible, clear selection       |
 | Enter, double-click                 | Open the folder, or download the file     |
+| Space                               | Preview the image (version 2)             |
 | Alt + ← / → / ↑, Backspace          | Back, forward, parent folder              |
 | F5 or Ctrl/⌘ + R                    | Refresh                                   |
 | Ctrl/⌘ + L, Ctrl/⌘ + F              | Focus location field, focus filter        |
@@ -116,6 +120,55 @@ second writer replacing the placeholder in between.
 Linux and Windows have no application menu; macOS has a minimal app / Edit /
 Window menu. There is no reload or DevTools entry or shortcut, and DevTools are
 disabled in packaged builds. Ctrl/⌘ + R and F5 refresh the current folder.
+
+## Image preview (version 2, outside SPEC.md)
+
+Select an image file and press **Preview** (or **Space**). Double-click and
+Enter still download, as before. The preview opens in a modal: the image is
+fitted to the window, with the file name, format, pixel size, file size and
+"n of m". **← / →** (or Prev / Next) step through the images of the current
+folder in the table's order (filter and sort apply), **Esc** or Close returns
+focus to the file table with the last previewed image selected. **Download**
+queues the shown file through the normal download flow.
+
+- **Offered for:** regular files (not links, folders or other types) with a
+  `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `bmp`, `ico` or `avif`
+  extension. The extension only decides whether the button is enabled; the
+  main process decides from the file's first bytes (magic bytes) and refuses
+  anything else ("Not a supported image"), whatever the name says.
+- **Limit:** 20 MiB. Larger files are refused from `lstat` before reading, and
+  the limit is enforced again while reading in case the file grows; the
+  preview then offers Download instead.
+- **States:** loading (after 120 ms), too large, not a supported image,
+  damaged (the bytes start like an image but don't decode), permission
+  denied, file not found, not connected. A lost connection closes the preview
+  together with the browser and shows the usual reconnect state.
+- **Requests:** each preview carries the session ID and a request ID. Stepping
+  to another image supersedes the previous request: main stops that read and
+  answers it `CANCELLED`, and the renderer ignores any reply that isn't for the
+  current request. Only the currently connected session is accepted.
+- **Safety:** main reads through the same read-only session (`lstat`, then a
+  read stream; nothing else). The renderer shows the bytes from a `blob:` URL
+  in an `<img>` element; images loaded that way (including SVG) never run
+  scripts and never load external resources. The production CSP changed from
+  `img-src 'self' data:` to `img-src 'self' blob:` (nothing used `data:`); no
+  other CSP change. Nothing is written to disk: the bytes live in memory only
+  and the blob URL is revoked when the image changes or the preview closes.
+
+**Deliberate exception to spec 7.2.** Spec 7.2 says file bytes are never
+forwarded through renderer IPC and never loaded whole into memory. The image
+preview is the one exception: `remote.previewImage` returns the bytes of one
+image, at most 20 MiB, held in memory in main until sent, and in the renderer
+while shown. Downloads are unchanged: they stream from SFTP to disk and never
+send file bytes to the renderer. The exception is implemented in
+`src/main/connections/preview-service.ts` only.
+
+Tests: `tests/unit/preview.test.ts` (extensions, magic bytes incl. every
+fixture format, the cap from stat and while streaming, supersede/cancel,
+disconnect, renderer request state), `tests/integration/preview-service.test.ts`
+(real sshd), `tests/e2e/preview.e2e.test.ts` (the app under xvfb).
+Screenshots `docs/screenshots/40-*.png` to `49-*.png`. Fixture images:
+`tests/fixtures/images/` (generated with Pillow, committed).
 
 Transport validation results and the dependency patch: [`docs/transport-validation.md`](docs/transport-validation.md).
 
