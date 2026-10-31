@@ -1,5 +1,7 @@
 // IPC channel names, payload schemas and the typed bridge. Pure.
 import { z } from 'zod';
+import type { Listing } from './browse';
+import { MAX_REMOTE_PATH } from './remote-path';
 import type { ConnectionSnapshot } from './connection';
 import type { Profile } from './profiles';
 import type { Settings, SettingsPatch } from './settings';
@@ -27,6 +29,8 @@ export const IPC = {
   passphraseCancel: 'passphrase.cancel',
   trustedHostsList: 'trustedHosts.list',
   trustedHostsRemove: 'trustedHosts.remove',
+  remoteList: 'remote.list',
+  remoteCancel: 'remote.cancel',
 } as const;
 export type InvokeChannel = (typeof IPC)[keyof typeof IPC];
 
@@ -36,6 +40,12 @@ export const IPC_EVENTS = {
 } as const;
 
 const Uuid = z.uuid();
+/** Absolute POSIX remote path; normalized again in main. */
+const RemotePath = z
+  .string()
+  .min(1)
+  .max(MAX_REMOTE_PATH)
+  .refine((p) => p.startsWith('/') && !p.includes('\0'), 'Must be an absolute remote path');
 const Empty = z.undefined();
 
 /** Payload schema per channel (strict: unknown keys are rejected). */
@@ -65,6 +75,8 @@ export const PayloadSchemas = {
   [IPC.passphraseCancel]: z.object({ challengeId: Uuid }).strict(),
   [IPC.trustedHostsList]: Empty,
   [IPC.trustedHostsRemove]: z.object({ key: z.string().min(3).max(300) }).strict(),
+  [IPC.remoteList]: z.object({ sessionId: Uuid, requestId: Uuid, path: RemotePath }).strict(),
+  [IPC.remoteCancel]: z.object({ sessionId: Uuid, requestId: Uuid }).strict(),
 } satisfies Record<InvokeChannel, z.ZodType>;
 
 export const IPC_ERROR_CODES = [
@@ -150,5 +162,9 @@ export interface SftpClientBridge {
   trustedHosts: {
     list(): Promise<IpcResult<TrustedHostEntry[]>>;
     remove(key: string): Promise<IpcResult<null>>;
+  };
+  remote: {
+    list(sessionId: string, requestId: string, path: string): Promise<IpcResult<Listing>>;
+    cancel(sessionId: string, requestId: string): Promise<IpcResult<null>>;
   };
 }

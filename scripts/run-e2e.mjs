@@ -8,7 +8,8 @@ const run = (cmd, args) => {
 };
 
 run('npx', ['electron-forge', 'package']);
-const vitest = ['vitest', 'run', 'tests/e2e'];
+// One file at a time: each launches Electron + sshd, and timings are measured.
+const vitest = ['vitest', 'run', 'tests/e2e', '--no-file-parallelism'];
 if (process.platform === 'linux' && !process.env.DISPLAY) {
   run('xvfb-run', ['-a', '-s', '-screen 0 1440x900x24', 'npx', ...vitest]);
 } else {

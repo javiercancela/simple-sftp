@@ -17,6 +17,7 @@ import type { Profile } from '../../shared/profiles';
 import type { Settings } from '../../shared/settings';
 import { StaleRequestError, type ConnectionManager } from '../connections/connection-manager';
 import { isTransportError } from '../connections/errors';
+import type { BrowseService } from '../connections/browse-service';
 import type { TrustStore } from '../connections/trust-store';
 import type { SettingsStore } from '../platform/settings-store';
 import {
@@ -39,6 +40,7 @@ export interface RouterServices {
   settings: SettingsStore;
   trust: TrustStore;
   connections: ConnectionManager;
+  browse: BrowseService;
   appInfo(): AppInfo;
   chooseFile(kind: 'privateKey' | 'certificate' | 'downloadDirectory'): Promise<ChooseFileResult>;
   notices: StartupNotice[];
@@ -121,6 +123,12 @@ export function createIpcRouter(s: RouterServices) {
     [IPC.trustedHostsList]: (): TrustedHostEntry[] => s.trust.list(),
     [IPC.trustedHostsRemove]: async (p: { key: string }) => {
       if (!(await s.trust.remove(p.key))) throw new NotFound();
+      return null;
+    },
+    [IPC.remoteList]: (p: { sessionId: string; requestId: string; path: string }) =>
+      s.browse.list(p.sessionId, p.requestId, p.path),
+    [IPC.remoteCancel]: (p: { sessionId: string; requestId: string }) => {
+      if (!s.browse.cancel(p.sessionId, p.requestId)) throw new StaleRequestError('Request');
       return null;
     },
   };

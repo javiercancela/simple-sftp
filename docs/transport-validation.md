@@ -98,3 +98,22 @@ alternative" route in spec 3.2. Alternatives considered, not built:
   `CONNECTION_LOST` after the missed keepalives. Production uses 30 s × 3.
 - **Timeouts.** 20 s connect timeout, paused while the passphrase or host-trust
   dialog is open (proven with a 1.5 s timeout and 2.5 s waits in each dialog).
+
+## Milestone 3 additions (browsing)
+
+- **In-flight SFTP requests hung forever when the connection closed.**
+  `@electerm/ssh2` does not always fail pending SFTP callbacks when the channel
+  goes away. Every session request (`readdir`, `stat`, `lstat`, `realpath`) now
+  goes through a guard that rejects it with the close error (or `DISCONNECTED`)
+  when the session closes. Proven in `tests/integration/browse-service.test.ts`
+  (freeze the server with SIGSTOP, start a listing, disconnect: the listing
+  fails and the disconnect finishes in under 6 s).
+- **Disconnect from an unresponsive server never finished.** ssh2's
+  `Client.destroy()` is a no-op once `end()` has half-closed the socket, so the
+  3 s hard stop did nothing. The hard stop now destroys the underlying socket.
+  Measured in the E2E suite: user disconnect from a frozen server completes in
+  about 3.4 s.
+- **Symlinks.** Listings use `readdir` (lstat semantics); link targets are
+  resolved with one `stat` per link (16 at a time) to tell links to folders,
+  links to files and broken links apart. Links are never followed implicitly;
+  opening a link to a folder is an explicit navigation.

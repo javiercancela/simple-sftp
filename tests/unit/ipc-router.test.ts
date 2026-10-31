@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BrowseService } from '../../src/main/connections/browse-service';
 import { ConnectionManager } from '../../src/main/connections/connection-manager';
 import { TrustStore } from '../../src/main/connections/trust-store';
 import { createIpcRouter, type SenderInfo } from '../../src/main/ipc/router';
@@ -40,6 +41,7 @@ async function setup(dir: string) {
     settings,
     trust,
     connections,
+    browse: new BrowseService({ getSession: (id) => connections.getSession(id) }),
     appInfo: () => ({
       name: 'SimpleSFTP',
       version: '0',
@@ -92,6 +94,18 @@ describe('IPC router', () => {
     [IPC.passphraseSubmit, { challengeId: RANDOM_UUID, passphrase: '' }],
     [IPC.passphraseSubmit, { challengeId: RANDOM_UUID, passphrase: 'x'.repeat(2000) }],
     [IPC.trustAccept, 'string payload'],
+    [IPC.remoteList, { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: 'relative/dir' }],
+    [IPC.remoteList, { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/a\u0000b' }],
+    [
+      IPC.remoteList,
+      { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/' + 'a'.repeat(5000) },
+    ],
+    [IPC.remoteList, { sessionId: RANDOM_UUID, requestId: 'r1', path: '/' }],
+    [
+      IPC.remoteList,
+      { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/', recursive: true },
+    ],
+    [IPC.remoteCancel, { sessionId: RANDOM_UUID }],
   ])('%s rejects malformed payload %j', async (channel, payload) => {
     const { router } = await setup(await tmp());
     expect(await router.invoke(channel, TRUSTED, payload)).toMatchObject({
@@ -165,6 +179,23 @@ describe('IPC router', () => {
         error: { code: 'STALE' },
       });
     }
+  });
+
+  it('remote.list needs the current connected session; unknown cancels are STALE', async () => {
+    const { router } = await setup(await tmp());
+    expect(
+      await router.invoke(IPC.remoteList, TRUSTED, {
+        sessionId: RANDOM_UUID,
+        requestId: RANDOM_UUID,
+        path: '/etc',
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'DISCONNECTED' } });
+    expect(
+      await router.invoke(IPC.remoteCancel, TRUSTED, {
+        sessionId: RANDOM_UUID,
+        requestId: RANDOM_UUID,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'STALE' } });
   });
 
   it('removing an unknown trusted host is NOT_FOUND', async () => {

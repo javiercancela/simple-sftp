@@ -50,6 +50,10 @@ const bridge: SftpClientBridge = {
     list: () => inv(IPC.trustedHostsList),
     remove: (key) => inv(IPC.trustedHostsRemove, { key }),
   },
+  remote: {
+    list: (sessionId, requestId, path) => inv(IPC.remoteList, { sessionId, requestId, path }),
+    cancel: (sessionId, requestId) => inv(IPC.remoteCancel, { sessionId, requestId }),
+  },
 };
 
 contextBridge.exposeInMainWorld('sftpClient', bridge);

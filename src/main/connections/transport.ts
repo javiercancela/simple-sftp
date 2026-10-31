@@ -158,9 +158,43 @@ class Session implements SftpSession {
     if (this.closed) throw new TransportError('DISCONNECTED', 'Not connected.');
   }
 
-  list(path: string): Promise<RemoteEntry[]> {
+  /**
+   * Run one SFTP request; if the connection closes first, fail it instead of
+   * leaving it pending forever (ssh2 does not fail in-flight callbacks).
+   */
+  private request<T>(
+    run: (resolve: (v: T) => void, reject: (e: Error) => void) => void,
+  ): Promise<T> {
     this.ensureOpen();
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
+      let done = false;
+      const off = this.onClose((e) => {
+        if (done) return;
+        done = true;
+        reject(
+          e ??
+            new TransportError('DISCONNECTED', 'The connection closed before the server answered.'),
+        );
+      });
+      run(
+        (v) => {
+          if (done) return;
+          done = true;
+          off();
+          resolve(v);
+        },
+        (e) => {
+          if (done) return;
+          done = true;
+          off();
+          reject(e);
+        },
+      );
+    });
+  }
+
+  list(path: string): Promise<RemoteEntry[]> {
+    return this.request((resolve, reject) => {
       this.sftp.readdir(path, (err, list) => {
         if (err) return reject(sftpError(err, path));
         resolve(
@@ -173,8 +207,7 @@ class Session implements SftpSession {
   }
 
   stat(path: string): Promise<RemoteStat> {
-    this.ensureOpen();
-    return new Promise((resolve, reject) => {
+    return this.request((resolve, reject) => {
       this.sftp.stat(path, (err, attrs) =>
         err ? reject(sftpError(err, path)) : resolve(toStat(attrs)),
       );
@@ -182,8 +215,7 @@ class Session implements SftpSession {
   }
 
   lstat(path: string): Promise<RemoteStat> {
-    this.ensureOpen();
-    return new Promise((resolve, reject) => {
+    return this.request((resolve, reject) => {
       this.sftp.lstat(path, (err, attrs) =>
         err ? reject(sftpError(err, path)) : resolve(toStat(attrs)),
       );
@@ -191,8 +223,7 @@ class Session implements SftpSession {
   }
 
   realpath(path: string): Promise<string> {
-    this.ensureOpen();
-    return new Promise((resolve, reject) => {
+    return this.request((resolve, reject) => {
       this.sftp.realpath(path, (err, abs) => (err ? reject(sftpError(err, path)) : resolve(abs)));
     });
   }
@@ -216,9 +247,14 @@ class Session implements SftpSession {
         /* ignore */
       }
       this.client.end();
-      // Hard stop if the server does not close promptly.
+      // Hard stop if the server does not close promptly. ssh2's destroy() is a
+      // no-op once end() has half-closed the socket, so destroy the socket.
       setTimeout(() => {
-        if (!this.closed) this.client.destroy();
+        if (this.closed) return;
+        // oxlint-disable-next-line no-underscore-dangle -- ssh2 internal, no public API
+        const sock = (this.client as unknown as { _sock?: { destroy(): void } })._sock;
+        if (sock) sock.destroy();
+        else this.client.destroy();
       }, 3000).unref();
     });
   }

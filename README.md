@@ -1,14 +1,39 @@
-# SimpleSFTP (milestones 1–2: transport, profiles and connection UI)
+# SimpleSFTP (milestones 1–3: transport, profiles, connection UI, browsing)
 
 Small Electron app for browsing SFTP servers and downloading files with an SSH
 private key, optionally paired with an OpenSSH user certificate. See
-[`SPEC.md`](SPEC.md). This build covers **spec section 13 steps 1 and 2**:
+[`SPEC.md`](SPEC.md). This build covers **spec section 13 steps 1–3**:
 
 1. Transport adapter, real OpenSSH tests, packaged smoke test.
 2. Saved server profiles (create, edit, duplicate, delete), native file
    pickers, trusted host keys, and the connection lifecycle with host-trust
-   and passphrase dialogs. Once connected, the app shows the server's default
-   folder. **File browsing and downloads are not built yet** (step 3).
+   and passphrase dialogs.
+3. Read-only remote browsing (spec 6): location field, breadcrumbs, back /
+   forward / parent / refresh / server default folder, a sortable virtualized
+   file table (name, type, size, modified), filter, "Show hidden files",
+   multi-selection, symlink handling, and distinct empty, loading,
+   permission-denied, not-found and disconnected states. **Downloads are not
+   built yet** (step 4): the Download button is disabled and double-clicking a
+   file only shows a "not available yet" message.
+
+### Browsing keyboard shortcuts
+
+| Keys                                | Action                                    |
+| ----------------------------------- | ----------------------------------------- |
+| ↑ ↓ Home End PageUp PageDown        | Move the cursor (Shift extends the range) |
+| Ctrl/⌘ + arrow, then Ctrl/⌘ + Space | Move without selecting, toggle a row      |
+| Ctrl/⌘ + A, Esc                     | Select all visible, clear selection       |
+| Enter                               | Open the folder (files: download stub)    |
+| Alt + ← / → / ↑, Backspace          | Back, forward, parent folder              |
+| F5 or Ctrl/⌘ + R                    | Refresh                                   |
+| Ctrl/⌘ + L, Ctrl/⌘ + F              | Focus location field, focus filter        |
+| Esc while loading                   | Cancel the listing                        |
+
+The browser is read-only: the main process only calls `readdir`, `stat`,
+`lstat` and `realpath`. Every listing carries a session ID and request ID; a
+reply for a cancelled or superseded request, or for an old session, is dropped
+in both the main process and the renderer, so it never replaces the current
+view. 10,000-entry measurements: [`docs/e2e-browse-metrics.json`](docs/e2e-browse-metrics.json).
 
 Transport validation results and the dependency patch: [`docs/transport-validation.md`](docs/transport-validation.md).
 

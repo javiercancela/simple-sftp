@@ -6,6 +6,7 @@ import { IPC_EVENTS, type StartupNotice } from '../shared/ipc-contract';
 import { ConnectionManager } from './connections/connection-manager';
 import { TrustStore } from './connections/trust-store';
 import { registerIpcHandlers } from './ipc/handlers';
+import { BrowseService } from './connections/browse-service';
 import { createIpcRouter } from './ipc/router';
 import { chooseFile } from './platform/dialogs';
 import type { Recovery } from './platform/json-file';
@@ -60,12 +61,15 @@ async function startApp(): Promise<void> {
       mainWindow?.webContents.send(IPC_EVENTS.connectionState, snap),
   });
 
+  const browse = new BrowseService({ getSession: (id) => connections.getSession(id) });
+
   const rendererUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL ?? pathToFileURL(RENDERER_INDEX()).href;
   const router = createIpcRouter({
     profiles,
     settings,
     trust,
     connections,
+    browse,
     notices,
     appInfo: () => ({
       name: app.getName(),

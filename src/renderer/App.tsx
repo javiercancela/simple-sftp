@@ -4,6 +4,7 @@ import type { StartupNotice } from '../shared/ipc-contract';
 import type { Profile } from '../shared/profiles';
 import type { Settings, Theme } from '../shared/settings';
 import { api } from './api';
+import { Browser } from './browser/Browser';
 import { PassphraseDialog, TrustDialog } from './components/ChallengeDialogs';
 import { ErrorPanel } from './components/ErrorPanel';
 import { ProfileDialog } from './components/ProfileDialog';
@@ -39,6 +40,15 @@ export function App(): React.JSX.Element {
   const [dismissedRev, setDismissedRev] = useState(-1);
   const [actionError, setActionError] = useState<string | null>(null);
   const lastRev = useRef(-1);
+  // The profile we were last browsing, to show a distinct disconnected state.
+  const [lastBrowsed, setLastBrowsed] = useState<{ id: string; name: string } | null>(null);
+  if (
+    snap.state === 'connected' &&
+    snap.profileId &&
+    snap.profileName &&
+    (lastBrowsed?.id !== snap.profileId || lastBrowsed.name !== snap.profileName)
+  )
+    setLastBrowsed({ id: snap.profileId, name: snap.profileName });
 
   const applySnap = useCallback((s: ConnectionSnapshot) => {
     // Drop out-of-order events (spec 9.4).
@@ -179,14 +189,33 @@ export function App(): React.JSX.Element {
                 Add server
               </button>
             </div>
-          ) : snap.state === 'connected' ? (
-            <div className="empty-state" data-testid="connected-panel">
-              <h2>Connected to {snap.profileName}</h2>
-              <p>
-                Signed in as the profile user. Server default folder:{' '}
-                <span className="mono">{snap.remoteHome ?? '—'}</span>
-              </p>
-              <p className="hint">File browsing arrives in the next milestone.</p>
+          ) : snap.state === 'connected' && snap.sessionId ? (
+            <Browser
+              key={snap.sessionId}
+              session={{
+                sessionId: snap.sessionId,
+                home: snap.remoteHome,
+                initialDir:
+                  profiles.find((p) => p.id === snap.profileId)?.initialRemoteDirectory ?? null,
+              }}
+            />
+          ) : (snap.state === 'disconnected' || snap.state === 'failed') &&
+            lastBrowsed &&
+            selected?.id === lastBrowsed.id ? (
+            <div className="empty-state" data-testid="browser-state-disconnected">
+              <h2>
+                {snap.error?.code === 'CONNECTION_LOST'
+                  ? `Connection to ${lastBrowsed.name} was lost`
+                  : `Disconnected from ${lastBrowsed.name}`}
+              </h2>
+              <p>Files can't be browsed while disconnected.</p>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void connect(lastBrowsed.id)}
+              >
+                Reconnect
+              </button>
             </div>
           ) : (
             <div className="empty-state">

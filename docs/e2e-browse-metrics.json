@@ -1,0 +1,12 @@
+{
+  "measuredAt": "2026-10-31T13:09:38.246Z",
+  "environment": "Linux, xvfb software rendering, sshd on 127.0.0.1",
+  "open10k_ms": "239",
+  "domRowsRendered": "29",
+  "scroll10k": "100 scroll steps top→bottom in 1656 ms; frame gap p95 17 ms, max 17 ms",
+  "keyboardEnd10k_ms": "32",
+  "filter10k_type4keys_ms": "29",
+  "filter10k_perKeystroke": "avg 32 ms, max 34 ms (input → painted)",
+  "loadingStateShown_ms": "210",
+  "disconnectFrozenServer_ms": "3356"
+}
