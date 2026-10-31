@@ -1,7 +1,7 @@
 {
-  "measuredAt": "2026-10-31T14:14:49.080Z",
+  "measuredAt": "2026-10-31T14:36:20.120Z",
   "environment": "Linux, xvfb, Electron app against sshd on 127.0.0.1",
-  "cancelFrozenActiveMs": 122,
-  "retryThroughput": "192 MiB in 1.81 s (106 MiB/s, includes UI polling)",
-  "mainProcessRss": "45 samples over 4 × 192 MiB: min 195 MiB, peak 249 MiB"
+  "cancelFrozenActiveMs": 120,
+  "retryThroughput": "192 MiB in 1.82 s (106 MiB/s, includes UI polling)",
+  "mainProcessRss": "42 samples over 4 × 192 MiB: min 195 MiB, peak 260 MiB"
 }
