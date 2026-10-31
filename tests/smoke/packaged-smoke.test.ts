@@ -19,6 +19,8 @@ import { SshdInstance, findSshd, freePort } from '../integration/helpers/sshd';
 const ROOT_DIR = resolve(__dirname, '..', '..');
 const TMP = resolve(__dirname, '..', '.tmp', `smoke-${process.pid}-${Date.now()}`);
 const K = (n: string): string => join(TMP, 'keys', n);
+const DECOYS = join(TMP, 'decoy-bin');
+const DECOY_LOG = join(TMP, 'decoy-calls.log');
 const PRINCIPAL = 'sftp-test-principal';
 
 interface Candidate {
@@ -104,6 +106,7 @@ function runApp(
       ...extraEnv,
     };
     delete env.ELECTRON_RUN_AS_NODE;
+    for (const [k, v] of Object.entries(env)) if (v === undefined) delete env[k];
     // Own process group, so stopping xvfb-run also stops the app under it.
     const p = spawn(cmd, args, {
       env,
@@ -157,6 +160,16 @@ describe.skipIf(!bin || apps.length === 0)('smoke-flavored package: transport sm
       principals: [PRINCIPAL],
     });
     await server.start();
+    // Decoy SSH/Node tools first on PATH: they record any call. The packaged
+    // app must need neither a system SSH client nor Node.js (spec 11, A1).
+    await mkdir(DECOYS, { recursive: true });
+    for (const tool of ['ssh', 'sftp', 'scp', 'ssh-agent', 'ssh-add', 'node', 'npm', 'npx']) {
+      await writeFile(
+        join(DECOYS, tool),
+        `#!/bin/sh\necho "${tool} $*" >> "${DECOY_LOG}"\nexit 127\n`,
+        { mode: 0o755 },
+      );
+    }
   }, 120_000);
 
   afterAll(async () => {
@@ -198,7 +211,11 @@ describe.skipIf(!bin || apps.length === 0)('smoke-flavored package: transport sm
           ],
         }),
       );
-      const { code, output } = await runApp(exe, configPath);
+      const { code, output } = await runApp(exe, configPath, {
+        PATH: `${DECOYS}:${process.env.PATH ?? ''}`,
+        SSH_AUTH_SOCK: undefined,
+        SSH_AGENT_PID: undefined,
+      });
       const result = existsSync(resultPath) ? JSON.parse(await readFile(resultPath, 'utf8')) : null;
       // Printed so CI logs show the evidence.
       console.log(`[smoke] ${app.label} exit=${code}\n${JSON.stringify(result, null, 2)}`);
@@ -206,6 +223,8 @@ describe.skipIf(!bin || apps.length === 0)('smoke-flavored package: transport sm
       expect(result?.ok, output).toBe(true);
       expect(code).toBe(0);
       expect(String(result.mainScript)).toMatch(/app\.asar/);
+      // No system SSH client, agent or Node.js was used.
+      expect(existsSync(DECOY_LOG) ? await readFile(DECOY_LOG, 'utf8') : '').toBe('');
     }, 120_000);
   }
 });
