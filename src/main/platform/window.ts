@@ -6,7 +6,8 @@ const PROD_CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
-  "img-src 'self' data:",
+  // blob: only for the in-memory image preview (version 2); nothing remote.
+  "img-src 'self' blob:",
   "font-src 'self'",
   "connect-src 'none'",
   "object-src 'none'",

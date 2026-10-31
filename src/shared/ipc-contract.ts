@@ -1,6 +1,7 @@
 // IPC channel names, payload schemas and the typed bridge. Pure.
 import { z } from 'zod';
 import type { Listing } from './browse';
+import type { ImagePreview } from './preview';
 import type { CollisionChoice, DownloadsSnapshot, EnqueueResult, PlanDecision } from './downloads';
 import { MAX_REMOTE_PATH } from './remote-path';
 import type { ConnectionSnapshot } from './connection';
@@ -32,6 +33,8 @@ export const IPC = {
   trustedHostsRemove: 'trustedHosts.remove',
   remoteList: 'remote.list',
   remoteCancel: 'remote.cancel',
+  remotePreviewImage: 'remote.previewImage',
+  remoteCancelPreview: 'remote.cancelPreview',
   downloadsList: 'downloads.list',
   downloadsEnqueue: 'downloads.chooseDestinationAndEnqueue',
   downloadsResolvePlan: 'downloads.resolvePlan',
@@ -106,6 +109,10 @@ export const PayloadSchemas = {
   [IPC.trustedHostsRemove]: z.object({ key: z.string().min(3).max(300) }).strict(),
   [IPC.remoteList]: z.object({ sessionId: Uuid, requestId: Uuid, path: RemotePath }).strict(),
   [IPC.remoteCancel]: z.object({ sessionId: Uuid, requestId: Uuid }).strict(),
+  [IPC.remotePreviewImage]: z
+    .object({ sessionId: Uuid, requestId: Uuid, path: RemotePath })
+    .strict(),
+  [IPC.remoteCancelPreview]: z.object({ sessionId: Uuid, requestId: Uuid }).strict(),
   [IPC.downloadsList]: Empty,
   // Remote paths only: the local destination always comes from a native dialog in main.
   [IPC.downloadsEnqueue]: z
@@ -251,6 +258,17 @@ export interface SftpClientBridge {
   remote: {
     list(sessionId: string, requestId: string, path: string): Promise<IpcResult<Listing>>;
     cancel(sessionId: string, requestId: string): Promise<IpcResult<null>>;
+    /**
+     * Version 2, outside SPEC.md: the one deliberate exception to spec 7.2.
+     * Returns the bytes of a remote image (capped, magic-byte checked) for an
+     * in-memory preview. Nothing is written to disk.
+     */
+    previewImage(
+      sessionId: string,
+      requestId: string,
+      path: string,
+    ): Promise<IpcResult<ImagePreview>>;
+    cancelPreview(sessionId: string, requestId: string): Promise<IpcResult<null>>;
   };
   downloads: {
     list(): Promise<IpcResult<DownloadsSnapshot>>;

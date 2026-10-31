@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BrowseService } from '../../src/main/connections/browse-service';
+import { PreviewService } from '../../src/main/connections/preview-service';
 import {
   ConnectionManager,
   StaleRequestError,
@@ -75,6 +76,7 @@ async function setup(dir: string) {
     trust,
     connections,
     browse: new BrowseService({ getSession: (id) => connections.getSession(id) }),
+    preview: new PreviewService({ getSession: (id) => connections.getSession(id) }),
     downloads,
     resolveQuit: () => Promise.reject(new StaleRequestError('Quit request')),
     appInfo: () => ({
@@ -141,6 +143,14 @@ describe('IPC router', () => {
       { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/', recursive: true },
     ],
     [IPC.remoteCancel, { sessionId: RANDOM_UUID }],
+    [IPC.remotePreviewImage, { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: 'x.png' }],
+    [IPC.remotePreviewImage, { sessionId: 'abc', requestId: RANDOM_UUID, path: '/x.png' }],
+    [
+      IPC.remotePreviewImage,
+      { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/x.png', maxBytes: 1e9 },
+    ],
+    [IPC.remotePreviewImage, { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/\u0000.png' }],
+    [IPC.remoteCancelPreview, { sessionId: RANDOM_UUID, requestId: 7 }],
   ])('%s rejects malformed payload %j', async (channel, payload) => {
     const { router } = await setup(await tmp());
     expect(await router.invoke(channel, TRUSTED, payload)).toMatchObject({
@@ -227,6 +237,23 @@ describe('IPC router', () => {
     ).toMatchObject({ ok: false, error: { code: 'DISCONNECTED' } });
     expect(
       await router.invoke(IPC.remoteCancel, TRUSTED, {
+        sessionId: RANDOM_UUID,
+        requestId: RANDOM_UUID,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'STALE' } });
+  });
+
+  it('remote.previewImage needs the current connected session; unknown preview cancels are STALE', async () => {
+    const { router } = await setup(await tmp());
+    expect(
+      await router.invoke(IPC.remotePreviewImage, TRUSTED, {
+        sessionId: RANDOM_UUID,
+        requestId: RANDOM_UUID,
+        path: '/srv/a.png',
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'DISCONNECTED' } });
+    expect(
+      await router.invoke(IPC.remoteCancelPreview, TRUSTED, {
         sessionId: RANDOM_UUID,
         requestId: RANDOM_UUID,
       }),

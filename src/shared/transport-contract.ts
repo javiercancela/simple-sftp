@@ -28,6 +28,10 @@ export const TRANSPORT_ERROR_CODES = [
   'REMOTE_PERMISSION_DENIED',
   'REMOTE_ERROR',
   'DISCONNECTED',
+  // Image preview (version 2).
+  'PREVIEW_TOO_LARGE',
+  'PREVIEW_UNSUPPORTED',
+  'PREVIEW_NOT_A_FILE',
 ] as const;
 
 export const TransportErrorCodeSchema = z.enum(TRANSPORT_ERROR_CODES);

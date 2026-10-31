@@ -11,6 +11,7 @@ import {
   type StartupNotice,
 } from '../shared/ipc-contract';
 import { BrowseService } from './connections/browse-service';
+import { PreviewService } from './connections/preview-service';
 import { ConnectionManager, StaleRequestError } from './connections/connection-manager';
 import { TrustStore } from './connections/trust-store';
 import { DownloadService } from './downloads/download-service';
@@ -87,6 +88,7 @@ async function startApp(): Promise<void> {
   });
 
   const browse = new BrowseService({ getSession: (id) => connections.getSession(id) });
+  const preview = new PreviewService({ getSession: (id) => connections.getSession(id) });
 
   downloads = new DownloadService({
     connection: () => {
@@ -163,6 +165,7 @@ async function startApp(): Promise<void> {
     trust,
     connections,
     browse,
+    preview,
     downloads: dl,
     resolveQuit,
     notices,

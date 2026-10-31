@@ -18,6 +18,7 @@ import type { Settings } from '../../shared/settings';
 import { StaleRequestError, type ConnectionManager } from '../connections/connection-manager';
 import { isTransportError } from '../connections/errors';
 import type { BrowseService } from '../connections/browse-service';
+import type { PreviewService } from '../connections/preview-service';
 import { DownloadRequestError, type DownloadService } from '../downloads/download-service';
 import type { CollisionChoice, PlanDecision } from '../../shared/downloads';
 import type { QuitChoice } from '../../shared/ipc-contract';
@@ -44,6 +45,7 @@ export interface RouterServices {
   trust: TrustStore;
   connections: ConnectionManager;
   browse: BrowseService;
+  preview: PreviewService;
   downloads: DownloadService;
   /** Answer to a quit prompt (main owns the quit flow). */
   resolveQuit(requestId: string, choice: QuitChoice): Promise<void>;
@@ -146,6 +148,12 @@ export function createIpcRouter(s: RouterServices) {
       s.browse.list(p.sessionId, p.requestId, p.path),
     [IPC.remoteCancel]: (p: { sessionId: string; requestId: string }) => {
       if (!s.browse.cancel(p.sessionId, p.requestId)) throw new StaleRequestError('Request');
+      return null;
+    },
+    [IPC.remotePreviewImage]: (p: { sessionId: string; requestId: string; path: string }) =>
+      s.preview.preview(p.sessionId, p.requestId, p.path),
+    [IPC.remoteCancelPreview]: (p: { sessionId: string; requestId: string }) => {
+      if (!s.preview.cancel(p.sessionId, p.requestId)) throw new StaleRequestError('Request');
       return null;
     },
     [IPC.downloadsList]: () => s.downloads.getSnapshot(),
