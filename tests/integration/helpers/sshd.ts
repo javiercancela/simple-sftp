@@ -69,6 +69,15 @@ export interface SshdConfig {
   pubkeyAcceptedAlgorithms?: string;
   /** Default 'no' (tests fail auth on purpose); set to exercise penalties. */
   perSourcePenalties?: string;
+  /** Default DEBUG3. Use INFO for large transfers. */
+  logLevel?: string;
+  /**
+   * 'internal' (default): internal-sftp inside sshd-session.
+   * 'external': a separate sftp-server process, which tests can kill to make
+   * the SFTP subsystem disappear while SSH stays connected.
+   * 'none': no SFTP subsystem at all (SSH logins work, SFTP is refused).
+   */
+  sftpServer?: 'internal' | 'external' | 'none';
 }
 
 export class SshdInstance {
@@ -105,12 +114,23 @@ export class SshdInstance {
       'AllowAgentForwarding no',
       'X11Forwarding no',
       'PermitTTY no',
-      'LogLevel DEBUG3',
+      `LogLevel ${c.logLevel ?? 'DEBUG3'}`,
       // OpenSSH >= 9.8 penalizes sources after failed auths; tests fail on purpose.
       `PerSourcePenalties ${c.perSourcePenalties ?? 'no'}`,
-      'Subsystem sftp internal-sftp',
-      `ForceCommand internal-sftp -d ${c.sftpRoot}`,
     ];
+    if (c.sftpServer !== 'none') lines.push('Subsystem sftp internal-sftp');
+    if (c.sftpServer === 'none') {
+      // No subsystem and no forced command: the sftp request is refused.
+    } else if (c.sftpServer === 'external') {
+      const server = this.bin.libexecDir && join(this.bin.libexecDir, 'sftp-server');
+      if (!server || !existsSync(server)) throw new Error('sftp-server binary not found');
+      const ld = this.bin.env.LD_LIBRARY_PATH
+        ? `env LD_LIBRARY_PATH=${this.bin.env.LD_LIBRARY_PATH} `
+        : '';
+      lines.push(`ForceCommand ${ld}${server} -d ${c.sftpRoot}`);
+    } else {
+      lines.push(`ForceCommand internal-sftp -d ${c.sftpRoot}`);
+    }
     if (this.bin.libexecDir) {
       lines.push(`SshdSessionPath ${join(this.bin.libexecDir, 'sshd-session')}`);
       if (existsSync(join(this.bin.libexecDir, 'sshd-auth'))) {

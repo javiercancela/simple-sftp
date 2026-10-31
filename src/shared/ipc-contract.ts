@@ -1,6 +1,7 @@
 // IPC channel names, payload schemas and the typed bridge. Pure.
 import { z } from 'zod';
 import type { Listing } from './browse';
+import type { CollisionChoice, DownloadsSnapshot, EnqueueResult, PlanDecision } from './downloads';
 import { MAX_REMOTE_PATH } from './remote-path';
 import type { ConnectionSnapshot } from './connection';
 import type { Profile } from './profiles';
@@ -31,13 +32,36 @@ export const IPC = {
   trustedHostsRemove: 'trustedHosts.remove',
   remoteList: 'remote.list',
   remoteCancel: 'remote.cancel',
+  downloadsList: 'downloads.list',
+  downloadsEnqueue: 'downloads.chooseDestinationAndEnqueue',
+  downloadsResolvePlan: 'downloads.resolvePlan',
+  downloadsCancelPlan: 'downloads.cancelPlan',
+  downloadsResolveConflict: 'downloads.resolveConflict',
+  downloadsCancel: 'downloads.cancel',
+  downloadsRetry: 'downloads.retry',
+  downloadsReveal: 'downloads.reveal',
+  downloadsRetryCleanup: 'downloads.retryCleanup',
+  downloadsContinue: 'downloads.continue',
+  downloadsCancelAll: 'downloads.cancelAll',
+  downloadsClearFinished: 'downloads.clearFinished',
+  downloadsResolveOrphans: 'downloads.resolveOrphans',
+  appResolveQuit: 'app.resolveQuit',
 } as const;
 export type InvokeChannel = (typeof IPC)[keyof typeof IPC];
 
 /** Main → renderer event channels. */
 export const IPC_EVENTS = {
   connectionState: 'event.connectionState',
+  downloads: 'event.downloads',
+  quitRequest: 'event.quitRequest',
 } as const;
+
+/** Main asks the renderer how to handle quitting with pending downloads. */
+export interface QuitRequest {
+  requestId: string;
+  pendingCount: number;
+}
+export type QuitChoice = 'keepDownloading' | 'cancelAndQuit';
 
 const Uuid = z.uuid();
 /** Absolute POSIX remote path; normalized again in main. */
@@ -47,6 +71,7 @@ const RemotePath = z
   .max(MAX_REMOTE_PATH)
   .refine((p) => p.startsWith('/') && !p.includes('\0'), 'Must be an absolute remote path');
 const Empty = z.undefined();
+const Collision = z.enum(['replace', 'keepBoth', 'skip']);
 
 /** Payload schema per channel (strict: unknown keys are rejected). */
 export const PayloadSchemas = {
@@ -64,9 +89,13 @@ export const PayloadSchemas = {
   [IPC.settingsGet]: Empty,
   [IPC.settingsUpdate]: z.unknown(), // SettingsPatchSchema in main
   [IPC.connectionsGetState]: Empty,
-  [IPC.connectionsConnect]: z.object({ profileId: Uuid }).strict(),
+  [IPC.connectionsConnect]: z
+    .object({ profileId: Uuid, cancelDownloads: z.boolean().optional() })
+    .strict(),
   [IPC.connectionsCancel]: z.object({ sessionId: Uuid }).strict(),
-  [IPC.connectionsDisconnect]: z.object({ sessionId: Uuid }).strict(),
+  [IPC.connectionsDisconnect]: z
+    .object({ sessionId: Uuid, cancelDownloads: z.boolean().optional() })
+    .strict(),
   [IPC.trustAccept]: z.object({ challengeId: Uuid }).strict(),
   [IPC.trustReject]: z.object({ challengeId: Uuid }).strict(),
   [IPC.passphraseSubmit]: z
@@ -77,6 +106,43 @@ export const PayloadSchemas = {
   [IPC.trustedHostsRemove]: z.object({ key: z.string().min(3).max(300) }).strict(),
   [IPC.remoteList]: z.object({ sessionId: Uuid, requestId: Uuid, path: RemotePath }).strict(),
   [IPC.remoteCancel]: z.object({ sessionId: Uuid, requestId: Uuid }).strict(),
+  [IPC.downloadsList]: Empty,
+  // Remote paths only: the local destination always comes from a native dialog in main.
+  [IPC.downloadsEnqueue]: z
+    .object({ sessionId: Uuid, paths: z.array(RemotePath).min(1).max(1000) })
+    .strict(),
+  [IPC.downloadsResolvePlan]: z
+    .object({
+      planId: Uuid,
+      decisions: z
+        .array(
+          z
+            .object({
+              itemId: Uuid,
+              action: z.enum(['replace', 'keepBoth', 'skip', 'rename']),
+              // A plain file name (validated again in main), never a path.
+              name: z.string().min(1).max(1024).optional(),
+            })
+            .strict(),
+        )
+        .max(1000),
+    })
+    .strict(),
+  [IPC.downloadsCancelPlan]: z.object({ planId: Uuid }).strict(),
+  [IPC.downloadsResolveConflict]: z
+    .object({ jobId: Uuid, promptId: Uuid, choice: Collision })
+    .strict(),
+  [IPC.downloadsCancel]: z.object({ jobId: Uuid }).strict(),
+  [IPC.downloadsRetry]: z.object({ jobId: Uuid }).strict(),
+  [IPC.downloadsReveal]: z.object({ jobId: Uuid }).strict(),
+  [IPC.downloadsRetryCleanup]: z.object({ jobId: Uuid }).strict(),
+  [IPC.downloadsContinue]: Empty,
+  [IPC.downloadsCancelAll]: Empty,
+  [IPC.downloadsClearFinished]: Empty,
+  [IPC.downloadsResolveOrphans]: z.object({ action: z.enum(['delete', 'keep']) }).strict(),
+  [IPC.appResolveQuit]: z
+    .object({ requestId: Uuid, choice: z.enum(['keepDownloading', 'cancelAndQuit']) })
+    .strict(),
 } satisfies Record<InvokeChannel, z.ZodType>;
 
 export const IPC_ERROR_CODES = [
@@ -88,6 +154,11 @@ export const IPC_ERROR_CODES = [
   'VALIDATION',
   'STORAGE',
   'INTERNAL',
+  'DOWNLOADS_PENDING',
+  'DISCONNECTED',
+  'PAUSED',
+  'NOT_ALLOWED',
+  'INVALID',
 ] as const;
 export type IpcErrorCode = (typeof IPC_ERROR_CODES)[number];
 
@@ -108,13 +179,21 @@ export interface AppInfo {
   arch: string;
 }
 
-export interface StartupNotice {
-  id: string;
-  kind: 'recovered-config';
-  file: 'profiles' | 'settings' | 'trustedHosts';
-  backupPath: string;
-  message: string;
-}
+export type StartupNotice =
+  | {
+      id: string;
+      kind: 'recovered-config';
+      file: 'profiles' | 'settings' | 'trustedHosts' | 'transferJournal';
+      backupPath: string;
+      message: string;
+    }
+  | {
+      /** Partial files from an earlier run, recorded in the app's journal. */
+      id: string;
+      kind: 'orphan-partials';
+      message: string;
+      paths: string[];
+    };
 
 export interface TrustedHostEntry extends TrustedHost {
   key: string;
@@ -128,6 +207,8 @@ export interface SftpClientBridge {
     getInfo(): Promise<IpcResult<AppInfo>>;
     getNotices(): Promise<IpcResult<StartupNotice[]>>;
     dismissNotice(noticeId: string): Promise<IpcResult<null>>;
+    resolveQuit(requestId: string, choice: QuitChoice): Promise<IpcResult<null>>;
+    onQuitRequest(listener: (request: QuitRequest) => void): () => void;
   };
   profiles: {
     list(): Promise<IpcResult<Profile[]>>;
@@ -146,9 +227,13 @@ export interface SftpClientBridge {
   };
   connections: {
     getState(): Promise<IpcResult<ConnectionSnapshot>>;
-    connect(profileId: string): Promise<IpcResult<{ sessionId: string }>>;
+    /** cancelDownloads: confirm cancelling pending downloads (else DOWNLOADS_PENDING). */
+    connect(
+      profileId: string,
+      cancelDownloads?: boolean,
+    ): Promise<IpcResult<{ sessionId: string }>>;
     cancel(sessionId: string): Promise<IpcResult<null>>;
-    disconnect(sessionId: string): Promise<IpcResult<null>>;
+    disconnect(sessionId: string, cancelDownloads?: boolean): Promise<IpcResult<null>>;
     onState(listener: (snapshot: ConnectionSnapshot) => void): () => void;
   };
   trust: {
@@ -166,5 +251,29 @@ export interface SftpClientBridge {
   remote: {
     list(sessionId: string, requestId: string, path: string): Promise<IpcResult<Listing>>;
     cancel(sessionId: string, requestId: string): Promise<IpcResult<null>>;
+  };
+  downloads: {
+    list(): Promise<IpcResult<DownloadsSnapshot>>;
+    /** Main shows the native Save/folder dialog; the renderer never names a local path. */
+    chooseDestinationAndEnqueue(
+      sessionId: string,
+      paths: string[],
+    ): Promise<IpcResult<EnqueueResult>>;
+    resolvePlan(planId: string, decisions: PlanDecision[]): Promise<IpcResult<EnqueueResult>>;
+    cancelPlan(planId: string): Promise<IpcResult<null>>;
+    resolveConflict(
+      jobId: string,
+      promptId: string,
+      choice: CollisionChoice,
+    ): Promise<IpcResult<null>>;
+    cancel(jobId: string): Promise<IpcResult<null>>;
+    retry(jobId: string): Promise<IpcResult<{ jobId: string }>>;
+    reveal(jobId: string): Promise<IpcResult<null>>;
+    retryCleanup(jobId: string): Promise<IpcResult<null>>;
+    continue(): Promise<IpcResult<null>>;
+    cancelAll(): Promise<IpcResult<null>>;
+    clearFinished(): Promise<IpcResult<null>>;
+    resolveOrphans(action: 'delete' | 'keep'): Promise<IpcResult<{ failed: string[] }>>;
+    onChange(listener: (snapshot: DownloadsSnapshot) => void): () => void;
   };
 }

@@ -1,8 +1,8 @@
-# SimpleSFTP (milestones 1–3: transport, profiles, connection UI, browsing)
+# SimpleSFTP (milestones 1–4: transport, profiles, connection UI, browsing, downloads)
 
 Small Electron app for browsing SFTP servers and downloading files with an SSH
 private key, optionally paired with an OpenSSH user certificate. See
-[`SPEC.md`](SPEC.md). This build covers **spec section 13 steps 1–3**:
+[`SPEC.md`](SPEC.md). This build covers **spec section 13 steps 1–4**:
 
 1. Transport adapter, real OpenSSH tests, packaged smoke test.
 2. Saved server profiles (create, edit, duplicate, delete), native file
@@ -12,9 +12,8 @@ private key, optionally paired with an OpenSSH user certificate. See
    forward / parent / refresh / server default folder, a sortable virtualized
    file table (name, type, size, modified), filter, "Show hidden files",
    multi-selection, symlink handling, and distinct empty, loading,
-   permission-denied, not-found and disconnected states. **Downloads are not
-   built yet** (step 4): the Download button is disabled and double-clicking a
-   file only shows a "not available yet" message.
+   permission-denied, not-found and disconnected states.
+4. Downloads (spec 7): see below.
 
 ### Browsing keyboard shortcuts
 
@@ -23,7 +22,7 @@ private key, optionally paired with an OpenSSH user certificate. See
 | ↑ ↓ Home End PageUp PageDown        | Move the cursor (Shift extends the range) |
 | Ctrl/⌘ + arrow, then Ctrl/⌘ + Space | Move without selecting, toggle a row      |
 | Ctrl/⌘ + A, Esc                     | Select all visible, clear selection       |
-| Enter                               | Open the folder (files: download stub)    |
+| Enter, double-click                 | Open the folder, or download the file     |
 | Alt + ← / → / ↑, Backspace          | Back, forward, parent folder              |
 | F5 or Ctrl/⌘ + R                    | Refresh                                   |
 | Ctrl/⌘ + L, Ctrl/⌘ + F              | Focus location field, focus filter        |
@@ -35,6 +34,87 @@ reply for a cancelled or superseded request, or for an old session, is dropped
 in both the main process and the renderer, so it never replaces the current
 view. 10,000-entry measurements: [`docs/e2e-browse-metrics.json`](docs/e2e-browse-metrics.json).
 
+## Downloads
+
+- **Destination is chosen in the main process.** One file: the native Save
+  dialog, opened at the profile's download folder (else the system Downloads
+  folder) with the remote file name. Several files: the native folder picker.
+  The renderer only ever sends remote paths; it never supplies a local path.
+- **Only regular files.** Folders, links and special files in a selection are
+  skipped with a reason.
+- **Names are checked before anything is queued**: traversal, `/` or `\`,
+  absolute or drive paths, control characters, names over 255 bytes, Windows
+  reserved names and characters (on Windows), and two remote names that would
+  land on one local name (case/Unicode-insensitive on macOS and Windows). Such
+  files get a rename offer (a safe suggestion is pre-filled; main validates it
+  again). Existing files get **Replace / Keep both / Rename / Skip**; nothing is
+  overwritten silently.
+- **Queue**: one active transfer; states queued → downloading → completed /
+  failed / cancelled. Terminal states never change. Each job is bound to the
+  profile, session and host key it was created for and never moves to another
+  server. Cancel works for active and queued jobs (also against a frozen
+  server); Retry creates a new job that starts from zero; completed jobs have
+  Show in folder. The bottom panel is collapsed while empty and opens when files
+  are added.
+- **Writing**: SFTP read stream → byte counter → write stream with
+  backpressure (bounded memory). Data goes to an exclusively created
+  `<name>.<random>.part` file in the approved folder. The folder is approved by
+  real path plus device/inode and re-verified before writing and before
+  finalizing; nothing is written through a symlink or outside it. Size and
+  modification time are checked before and after; a difference fails the job
+  with "Remote file changed during download".
+- **Finalizing**: a new file is published with `link()` + `unlink()` (fails if
+  the name was taken meanwhile; falls back to an exclusive placeholder + rename
+  on file systems without hard links). Replace renames over the target only if
+  it is still the exact file the user approved. Keep both picks the first free
+  "name (n).ext" atomically. If the destination changed after approval, the app
+  asks again.
+- **Failures** remove the partial file (an existing file being replaced is never
+  touched). If removing it fails, the row offers **Delete partial file**. A
+  failed finalization keeps the complete data in the `.part` file and says so.
+  Error classes: remote permission denied, remote file missing, remote file
+  changed, connection lost, file transfer service stopped, local permission
+  denied, disk full, invalid file name, download folder changed, finalization
+  failed.
+- **Connection loss** fails the active job and pauses the rest. **Continue
+  downloads** is enabled after reconnecting to the same server (same profile and
+  host key). Switching servers or disconnecting with pending downloads asks
+  **Cancel downloads and switch / Stay connected**; closing or quitting asks
+  **Keep downloading / Cancel downloads and quit**.
+- **Transfer journal** (`transfer-journal.json`): the app records each partial
+  file it creates (path + device/inode). After a crash, startup offers to delete
+  only those files (**Delete partial files / Keep them**). Unrelated `.part`
+  files are never touched. Downloads never resume after a restart.
+
+Measurements: [`docs/download-metrics.json`](docs/download-metrics.json)
+(service-level, including a 4 GiB + 5 MiB file),
+[`docs/e2e-download-metrics.json`](docs/e2e-download-metrics.json) (in the app),
+[`docs/download-diskfull.json`](docs/download-diskfull.json).
+
+**How faults are tested** (all real, no mocks): network loss = SIGKILL of the
+server's per-connection processes; frozen server = SIGSTOP; SFTP subsystem
+stopping = SIGKILL of an external `sftp-server`; missing subsystem = an sshd
+with no SFTP subsystem; remote change = rewriting/truncating the file
+mid-download; failed finalization = removing write permission on the folder;
+disk full = an unprivileged user + mount namespace (`unshare -Urm`) with an
+8 MiB tmpfs mounted over the download folder, so the kernel returns a real
+`ENOSPC`; crash = SIGKILL of the Electron app mid-download.
+
+**Known limits**: macOS/Windows are untested. On macOS and Windows the native
+Save dialog may already confirm an overwrite, and the app then still shows its
+own Replace / Keep both choice. If the approved folder itself is moved away
+after the partial file was created, the partial file stays inside the moved
+folder (the journal still offers it for cleanup at the next start). On file
+systems without hard links (e.g. FAT), publishing a new file uses an exclusive
+placeholder + rename, which is safe against overwriting but not against a
+second writer replacing the placeholder in between.
+
+### Release menu
+
+Linux and Windows have no application menu; macOS has a minimal app / Edit /
+Window menu. There is no reload or DevTools entry or shortcut, and DevTools are
+disabled in packaged builds. Ctrl/⌘ + R and F5 refresh the current folder.
+
 Transport validation results and the dependency patch: [`docs/transport-validation.md`](docs/transport-validation.md).
 
 ## What is stored where
@@ -42,11 +122,12 @@ Transport validation results and the dependency patch: [`docs/transport-validati
 All app data is in Electron's `userData` folder (Linux `~/.config/SimpleSFTP`,
 macOS `~/Library/Application Support/SimpleSFTP`, Windows `%APPDATA%\SimpleSFTP`):
 
-| File                 | Contents                                                                                       |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| `profiles.json`      | Versioned list of profiles: names, hosts, ports, usernames, **paths** to key/certificate files |
-| `trusted-hosts.json` | Accepted host keys keyed by `host:port` (SHA-256 fingerprint + algorithm)                      |
-| `settings.json`      | Theme, sidebar width, window geometry, last selected profile                                   |
+| File                    | Contents                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------- |
+| `profiles.json`         | Versioned list of profiles: names, hosts, ports, usernames, **paths** to key/certificate files |
+| `trusted-hosts.json`    | Accepted host keys keyed by `host:port` (SHA-256 fingerprint + algorithm)                      |
+| `settings.json`         | Theme, sidebar width, window geometry, last selected profile                                   |
+| `transfer-journal.json` | Partial files of downloads in progress (path, device/inode), for cleanup after a crash         |
 
 No passwords, passphrases or key contents are ever written. Files are written
 atomically (temp file, fsync, rename). An unreadable or invalid file is kept as
@@ -87,8 +168,8 @@ Transport validation results and the dependency patch: [`docs/transport-validati
 
 The E2E tests drive the production renderer/main bundle with the development
 Electron binary (the packaged app's fuses block automation, by design). They
-stub only the native file dialog's return value; everything else, including
-SSH, is real. User data is isolated with `XDG_CONFIG_HOME`.
+stub only the native file/Save/folder dialogs' return values and "Show in
+folder"; everything else, including SSH and the local file system, is real. User data is isolated with `XDG_CONFIG_HOME`.
 
 ## Test fixtures
 

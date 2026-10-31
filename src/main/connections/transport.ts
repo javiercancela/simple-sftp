@@ -80,7 +80,8 @@ function entryType(attrs: SftpAttrs): RemoteEntryType {
 function toStat(attrs: SftpAttrs): RemoteStat {
   return {
     type: entryType(attrs),
-    size: typeof attrs.size === 'number' ? attrs.size : null,
+    // Sizes beyond 2^53 cannot be represented exactly; treat them as unknown.
+    size: typeof attrs.size === 'number' && Number.isSafeInteger(attrs.size) ? attrs.size : null,
     modifiedTime: typeof attrs.mtime === 'number' ? attrs.mtime : null,
   };
 }
@@ -134,6 +135,26 @@ class Session implements SftpSession {
         err.message,
       );
     });
+    // The SFTP channel can end while SSH stays up (sftp-server killed or
+    // crashed). The session is useless then: report it and close.
+    // When the whole connection dies the channel ends too; give the client a
+    // moment to report that first, so only a lone channel end counts here.
+    let sftpEnded = false;
+    const onSftpEnd = (): void => {
+      if (sftpEnded) return;
+      sftpEnded = true;
+      setTimeout(() => {
+        if (this.disconnecting || this.closed) return;
+        this.closeError ??= new TransportError(
+          'SFTP_UNAVAILABLE',
+          "The server's file transfer service stopped.",
+        );
+        this.client.end();
+        this.hardStopSoon();
+      }, 150).unref();
+    };
+    sftp.on('end', onSftpEnd);
+    sftp.on('close', onSftpEnd);
     client.on('close', () => {
       if (!this.disconnecting) {
         this.closeError ??= new TransportError(
@@ -247,16 +268,22 @@ class Session implements SftpSession {
         /* ignore */
       }
       this.client.end();
-      // Hard stop if the server does not close promptly. ssh2's destroy() is a
-      // no-op once end() has half-closed the socket, so destroy the socket.
-      setTimeout(() => {
-        if (this.closed) return;
-        // oxlint-disable-next-line no-underscore-dangle -- ssh2 internal, no public API
-        const sock = (this.client as unknown as { _sock?: { destroy(): void } })._sock;
-        if (sock) sock.destroy();
-        else this.client.destroy();
-      }, 3000).unref();
+      this.hardStopSoon();
     });
+  }
+
+  /**
+   * Hard stop if the server does not close promptly. ssh2's destroy() is a
+   * no-op once end() has half-closed the socket, so destroy the socket.
+   */
+  private hardStopSoon(): void {
+    setTimeout(() => {
+      if (this.closed) return;
+      // oxlint-disable-next-line no-underscore-dangle -- ssh2 internal, no public API
+      const sock = (this.client as unknown as { _sock?: { destroy(): void } })._sock;
+      if (sock) sock.destroy();
+      else this.client.destroy();
+    }, 3000).unref();
   }
 
   onClose(listener: (e: TransportError | undefined) => void): () => void {

@@ -50,6 +50,8 @@ export function createMainWindow(opts: {
       sandbox: true,
       webviewTag: false,
       spellcheck: false,
+      // No developer tools in release builds.
+      devTools: !app.isPackaged,
     },
   });
   if (opts.show) {

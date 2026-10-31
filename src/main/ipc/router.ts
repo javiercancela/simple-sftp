@@ -18,6 +18,9 @@ import type { Settings } from '../../shared/settings';
 import { StaleRequestError, type ConnectionManager } from '../connections/connection-manager';
 import { isTransportError } from '../connections/errors';
 import type { BrowseService } from '../connections/browse-service';
+import { DownloadRequestError, type DownloadService } from '../downloads/download-service';
+import type { CollisionChoice, PlanDecision } from '../../shared/downloads';
+import type { QuitChoice } from '../../shared/ipc-contract';
 import type { TrustStore } from '../connections/trust-store';
 import type { SettingsStore } from '../platform/settings-store';
 import {
@@ -41,6 +44,9 @@ export interface RouterServices {
   trust: TrustStore;
   connections: ConnectionManager;
   browse: BrowseService;
+  downloads: DownloadService;
+  /** Answer to a quit prompt (main owns the quit flow). */
+  resolveQuit(requestId: string, choice: QuitChoice): Promise<void>;
   appInfo(): AppInfo;
   chooseFile(kind: 'privateKey' | 'certificate' | 'downloadDirectory'): Promise<ChooseFileResult>;
   notices: StartupNotice[];
@@ -92,15 +98,26 @@ export function createIpcRouter(s: RouterServices) {
       return next;
     },
     [IPC.connectionsGetState]: (): ConnectionSnapshot => s.connections.getSnapshot(),
-    [IPC.connectionsConnect]: async (p: { profileId: string }) => {
+    [IPC.connectionsConnect]: async (p: { profileId: string; cancelDownloads?: boolean }) => {
       if (!s.profiles.get(p.profileId)) throw new NotFound();
+      // Switching servers with pending downloads needs explicit confirmation.
+      if (s.downloads.connectNeedsConfirmation(p.profileId)) {
+        if (!p.cancelDownloads) throw new DownloadsPendingError();
+        await s.downloads.cancelAll();
+      }
       return { sessionId: await s.connections.connect(p.profileId) };
     },
     [IPC.connectionsCancel]: (p: { sessionId: string }) => {
       s.connections.cancel(p.sessionId);
       return null;
     },
-    [IPC.connectionsDisconnect]: async (p: { sessionId: string }) => {
+    [IPC.connectionsDisconnect]: async (p: { sessionId: string; cancelDownloads?: boolean }) => {
+      if (s.connections.getSnapshot().sessionId !== p.sessionId)
+        throw new StaleRequestError('Session');
+      if (s.downloads.hasPending()) {
+        if (!p.cancelDownloads) throw new DownloadsPendingError();
+        await s.downloads.cancelAll();
+      }
       await s.connections.disconnect(p.sessionId);
       return null;
     },
@@ -131,6 +148,58 @@ export function createIpcRouter(s: RouterServices) {
       if (!s.browse.cancel(p.sessionId, p.requestId)) throw new StaleRequestError('Request');
       return null;
     },
+    [IPC.downloadsList]: () => s.downloads.getSnapshot(),
+    [IPC.downloadsEnqueue]: (p: { sessionId: string; paths: string[] }) =>
+      s.downloads.chooseDestinationAndEnqueue(p.sessionId, p.paths),
+    [IPC.downloadsResolvePlan]: (p: { planId: string; decisions: PlanDecision[] }) =>
+      s.downloads.resolvePlan(p.planId, p.decisions),
+    [IPC.downloadsCancelPlan]: (p: { planId: string }) => {
+      s.downloads.cancelPlan(p.planId);
+      return null;
+    },
+    [IPC.downloadsResolveConflict]: (p: {
+      jobId: string;
+      promptId: string;
+      choice: CollisionChoice;
+    }) => {
+      s.downloads.resolveConflict(p.jobId, p.promptId, p.choice);
+      return null;
+    },
+    [IPC.downloadsCancel]: (p: { jobId: string }) => {
+      s.downloads.cancel(p.jobId);
+      return null;
+    },
+    [IPC.downloadsRetry]: (p: { jobId: string }) => ({ jobId: s.downloads.retry(p.jobId) }),
+    [IPC.downloadsReveal]: (p: { jobId: string }) => {
+      s.downloads.reveal(p.jobId);
+      return null;
+    },
+    [IPC.downloadsRetryCleanup]: async (p: { jobId: string }) => {
+      await s.downloads.retryCleanup(p.jobId);
+      return null;
+    },
+    [IPC.downloadsContinue]: () => {
+      s.downloads.continueQueue();
+      return null;
+    },
+    [IPC.downloadsCancelAll]: async () => {
+      await s.downloads.cancelAll();
+      return null;
+    },
+    [IPC.downloadsClearFinished]: () => {
+      s.downloads.clearFinished();
+      return null;
+    },
+    [IPC.downloadsResolveOrphans]: async (p: { action: 'delete' | 'keep' }) => {
+      const r = await s.downloads.resolveOrphans(p.action);
+      const i = s.notices.findIndex((n) => n.kind === 'orphan-partials');
+      if (i !== -1) s.notices.splice(i, 1);
+      return r;
+    },
+    [IPC.appResolveQuit]: async (p: { requestId: string; choice: QuitChoice }) => {
+      await s.resolveQuit(p.requestId, p.choice);
+      return null;
+    },
   };
 
   const channels = new Set<string>(Object.keys(handlers));
@@ -158,12 +227,17 @@ export function createIpcRouter(s: RouterServices) {
 
 class NotFound extends Error {}
 
+export class DownloadsPendingError extends Error {}
+
 function mapError(err: unknown, log?: (m: string) => void): IpcResult<never> {
   if (err instanceof ProfileValidationError)
     return fail('VALIDATION', 'Please fix the highlighted fields.', err.fields);
   if (err instanceof ProfileNotFoundError || err instanceof NotFound)
     return fail('NOT_FOUND', 'That item no longer exists.');
   if (err instanceof StaleRequestError) return fail('STALE', 'That request is no longer current.');
+  if (err instanceof DownloadRequestError) return fail(err.code, err.message);
+  if (err instanceof DownloadsPendingError)
+    return fail('DOWNLOADS_PENDING', 'Downloads are still in progress.');
   if (err instanceof ZodError) return fail('INVALID_PAYLOAD', 'Malformed request.');
   if (isTransportError(err)) return fail(err.code, err.message);
   const e = err as NodeJS.ErrnoException;

@@ -117,3 +117,19 @@ alternative" route in spec 3.2. Alternatives considered, not built:
   resolved with one `stat` per link (16 at a time) to tell links to folders,
   links to files and broken links apart. Links are never followed implicitly;
   opening a link to a folder is an explicit navigation.
+
+## Milestone 4 additions (downloads)
+
+- **Large files**: the library's read stream requests 64 KiB at a time and
+  computes 64-bit offsets, so reads past 4 GiB are correct. A 4 GiB + 5 MiB
+  sparse file with random blocks at 0, across the 4 GiB boundary and at the end
+  downloads with a matching SHA-256 (see `docs/download-metrics.json`). Sizes
+  from the server above 2^53 (not exactly representable) are treated as
+  unknown instead of being rounded.
+- **SFTP subsystem stopping while SSH stays up**: when the server's
+  `sftp-server` process dies, the library ends the SFTP channel and fails pending
+  requests with "No response from server". The session now notices the channel
+  ending (150 ms grace so a normal disconnect is not misread), reports
+  `SFTP_UNAVAILABLE` "The server's file transfer service stopped.", and closes
+  the SSH connection. Tested with an external `sftp-server` killed
+  mid-transfer, and with a server that has no SFTP subsystem at all.

@@ -43,7 +43,14 @@ const NAV_KEYS: Record<string, NavKey> = {
   PageDown: 'PageDown',
 };
 
-export function Browser({ session }: { session: BrowserSession }): React.JSX.Element {
+export function Browser({
+  session,
+  onDownload,
+}: {
+  session: BrowserSession;
+  /** Ask main to choose a destination and queue these remote files. */
+  onDownload: (paths: string[]) => void;
+}): React.JSX.Element {
   const b = useBrowser(session);
   const [sort, setSort] = useState<SortSpec>(DEFAULT_SORT);
   const [query, setQuery] = useState('');
@@ -95,12 +102,20 @@ export function Browser({ session }: { session: BrowserSession }): React.JSX.Ele
   }
   const hiddenCount = useMemo(() => all.filter((e) => isHidden(e.name)).length, [all]);
 
-  // Download flow arrives in milestone 4: never execute or open remote content.
+  // Only regular files are downloaded; remote content is never opened or run.
   const requestDownload = (entries: BrowseEntry[]): void => {
+    if (view.kind !== 'ready') return;
+    const files = entries.filter((e) => e.type === 'file' && e.safeName);
+    const skipped = entries.length - files.length;
     setMessage(
-      `Downloading isn't available in this build yet (${entries.length} file${entries.length === 1 ? '' : 's'} requested).`,
+      skipped === 0
+        ? null
+        : `${skipped} selected item${skipped === 1 ? ' is' : 's are'} not ${skipped === 1 ? 'a regular file' : 'regular files'} and ${skipped === 1 ? 'was' : 'were'} skipped. Folders and links can't be downloaded in this version.`,
     );
+    if (files.length > 0) onDownload(files.map((e) => joinRemote(view.path, e.name)));
   };
+  const selectedEntries = visible.filter((e) => selection.selected.has(e.name));
+  const selectedFiles = selectedEntries.filter((e) => e.type === 'file').length;
 
   const open = (e: BrowseEntry): void => {
     if (view.kind !== 'ready') return;
@@ -192,7 +207,6 @@ export function Browser({ session }: { session: BrowserSession }): React.JSX.Ele
 
   const crumbPath = b.pending?.path ?? viewPath;
   const crumbs = crumbPath ? breadcrumbs(crumbPath) : [];
-  const selectedCount = visible.filter((e) => selection.selected.has(e.name)).length;
   const loadingState =
     b.pending !== null && (slowRequest === b.pending.requestId || view.kind === 'none');
 
@@ -388,15 +402,17 @@ export function Browser({ session }: { session: BrowserSession }): React.JSX.Ele
         <button
           type="button"
           className="primary"
-          disabled
-          title="Downloads arrive in the next milestone"
-          aria-describedby="download-note"
+          data-testid="download-button"
+          disabled={view.kind !== 'ready' || !!loadingState || selectedEntries.length === 0}
+          title={
+            selectedEntries.length > 0 && selectedFiles === 0
+              ? 'Only regular files can be downloaded'
+              : 'Download the selected files'
+          }
+          onClick={() => requestDownload(selectedEntries)}
         >
-          Download{selectedCount && !loadingState ? ` (${selectedCount})` : ''}
+          Download{selectedFiles && !loadingState ? ` (${selectedFiles})` : ''}
         </button>
-        <span id="download-note" className="visually-hidden">
-          Downloads are not available in this build yet.
-        </span>
       </div>
       <div className="browser-body">{body}</div>
       <div className="browser-status" data-testid="browser-status">

@@ -103,6 +103,16 @@ async function launch(): Promise<void> {
   });
   page = await app.firstWindow();
   await page.waitForSelector('.app', { timeout: 20_000 });
+  // Native Save dialogs can't be driven under xvfb: record the request and cancel.
+  await app.evaluate(({ dialog }) => {
+    const g = globalThis as unknown as { saveRequests: string[] };
+    g.saveRequests = [];
+    dialog.showSaveDialog = (async (...args: unknown[]) => {
+      const opts = args.at(-1) as { defaultPath?: string };
+      g.saveRequests.push(opts.defaultPath ?? '');
+      return { canceled: true, filePath: '' };
+    }) as typeof dialog.showSaveDialog;
+  });
 }
 
 async function connect(profileName: string): Promise<void> {
@@ -396,9 +406,12 @@ describe.skipIf(!bin || !built)('Browsing end-to-end (real sshd, xvfb)', () => {
     await page.keyboard.press('Escape');
     expect(await itemCount()).not.toMatch(/selected/);
     await openRow('$(touch pwned).sh');
-    expect(await page.getByTestId('browser-message').innerText()).toMatch(
-      /Downloading isn't available in this build yet/,
-    );
+    // Opening a file only offers to download it (native Save dialog, cancelled here).
+    await expect
+      .poll(() =>
+        app!.evaluate(() => (globalThis as unknown as { saveRequests: string[] }).saveRequests),
+      )
+      .toEqual([expect.stringMatching(/\/\$\(touch pwned\)\.sh$/)]);
     expect(existsSync(join(TMP, 'sftp-root', 'pwned'))).toBe(false);
     expect(await location()).toBe(ROOT);
     // Enter on a folder navigates.

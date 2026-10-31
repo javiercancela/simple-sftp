@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { BrowseService } from '../../src/main/connections/browse-service';
-import { ConnectionManager } from '../../src/main/connections/connection-manager';
+import {
+  ConnectionManager,
+  StaleRequestError,
+} from '../../src/main/connections/connection-manager';
+import { DownloadService } from '../../src/main/downloads/download-service';
+import { TransferJournal } from '../../src/main/downloads/journal';
 import { TrustStore } from '../../src/main/connections/trust-store';
 import { createIpcRouter, type SenderInfo } from '../../src/main/ipc/router';
 import { SettingsStore } from '../../src/main/platform/settings-store';
@@ -28,7 +33,8 @@ async function setup(dir: string) {
   const profiles = new ProfileStore(dir);
   const settings = new SettingsStore(dir);
   const trust = new TrustStore(dir);
-  await Promise.all([profiles.load(), settings.load(), trust.load()]);
+  const journal = new TransferJournal(dir);
+  await Promise.all([profiles.load(), settings.load(), trust.load(), journal.load()]);
   const emitted: unknown[] = [];
   const connections = new ConnectionManager({
     getProfile: (id) => profiles.get(id),
@@ -36,12 +42,41 @@ async function setup(dir: string) {
     emit: (s) => emitted.push(s),
   });
   const chosen: string[] = [];
+  const dialogs: string[] = [];
+  const downloads = new DownloadService({
+    connection: () => {
+      const s = connections.getSnapshot();
+      return {
+        sessionId: s.sessionId,
+        profileId: s.profileId,
+        profileName: s.profileName,
+        connected: s.state === 'connected',
+      };
+    },
+    getSession: (id) => connections.getSession(id),
+    getProfile: (id) => profiles.get(id),
+    saveDialog: (p) => {
+      dialogs.push(`save:${p}`);
+      return Promise.resolve(null);
+    },
+    chooseDirectory: (p) => {
+      dialogs.push(`dir:${p}`);
+      return Promise.resolve(null);
+    },
+    defaultDownloadDir: () => dir,
+    journal,
+    platform: 'linux',
+    emit: () => undefined,
+    reveal: (p) => dialogs.push(`reveal:${p}`),
+  });
   const router = createIpcRouter({
     profiles,
     settings,
     trust,
     connections,
     browse: new BrowseService({ getSession: (id) => connections.getSession(id) }),
+    downloads,
+    resolveQuit: () => Promise.reject(new StaleRequestError('Quit request')),
     appInfo: () => ({
       name: 'SimpleSFTP',
       version: '0',
@@ -56,7 +91,7 @@ async function setup(dir: string) {
     notices: [],
     isTrustedSender: (s) => s.webContentsId === 1 && s.isMainFrame && s.frameUrl === APP_URL,
   });
-  return { router, profiles, settings, connections, chosen, emitted };
+  return { router, profiles, settings, connections, chosen, emitted, dialogs };
 }
 
 describe('IPC router', () => {
@@ -203,5 +238,99 @@ describe('IPC router', () => {
     expect(await router.invoke(IPC.trustedHostsRemove, TRUSTED, { key: 'nope:22' })).toMatchObject({
       error: { code: 'NOT_FOUND' },
     });
+  });
+
+  it('downloads: the renderer can only name remote files; never a local path; stale IDs are refused', async () => {
+    const { router, dialogs } = await setup(await tmp());
+    const call = (ch: string, p: unknown) => router.invoke(ch, TRUSTED, p);
+    const S = RANDOM_UUID;
+    // Extra keys (a local destination) and malformed remote paths never pass.
+    for (const bad of [
+      { sessionId: S, paths: ['/srv/a.txt'], destination: '/tmp/evil' },
+      { sessionId: S, paths: ['/srv/a.txt'], localPath: '/etc/passwd' },
+      { sessionId: S, paths: ['relative.txt'] },
+      { sessionId: S, paths: ['/srv/a\0.txt'] },
+      { sessionId: S, paths: [] },
+      { sessionId: S, paths: Array.from({ length: 1001 }, (_, i) => `/f${i}`) },
+      { sessionId: 'not-a-uuid', paths: ['/srv/a.txt'] },
+      { sessionId: S, paths: '/srv/a.txt' },
+    ]) {
+      expect(await call(IPC.downloadsEnqueue, bad)).toMatchObject({
+        ok: false,
+        error: { code: 'INVALID_PAYLOAD' },
+      });
+    }
+    // Well formed, but not connected: no dialog is shown.
+    expect(await call(IPC.downloadsEnqueue, { sessionId: S, paths: ['/srv/a.txt'] })).toMatchObject(
+      {
+        ok: false,
+        error: { code: 'DISCONNECTED' },
+      },
+    );
+    expect(dialogs).toEqual([]);
+    // Unknown or stale IDs.
+    expect(await call(IPC.downloadsCancel, { jobId: S })).toMatchObject({
+      ok: false,
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(await call(IPC.downloadsRetry, { jobId: S })).toMatchObject({
+      ok: false,
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(await call(IPC.downloadsReveal, { jobId: S })).toMatchObject({
+      ok: false,
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(await call(IPC.downloadsRetryCleanup, { jobId: S })).toMatchObject({
+      ok: false,
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(await call(IPC.downloadsResolvePlan, { planId: S, decisions: [] })).toMatchObject({
+      ok: false,
+      error: { code: 'STALE' },
+    });
+    expect(await call(IPC.downloadsCancelPlan, { planId: S })).toMatchObject({
+      ok: false,
+      error: { code: 'STALE' },
+    });
+    expect(
+      await call(IPC.downloadsResolveConflict, { jobId: S, promptId: S, choice: 'replace' }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'STALE' },
+    });
+    expect(
+      await call(IPC.downloadsResolveConflict, { jobId: S, promptId: S, choice: 'overwrite' }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_PAYLOAD' },
+    });
+    expect(await call(IPC.downloadsContinue, undefined)).toMatchObject({
+      ok: false,
+      error: { code: 'STALE' },
+    });
+    expect(await call(IPC.downloadsResolveOrphans, { action: 'delete' })).toMatchObject({
+      ok: false,
+      error: { code: 'STALE' },
+    });
+    expect(await call(IPC.downloadsResolveOrphans, { action: 'rm -rf' })).toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_PAYLOAD' },
+    });
+    expect(await call(IPC.appResolveQuit, { requestId: S, choice: 'cancelAndQuit' })).toMatchObject(
+      { ok: false, error: { code: 'STALE' } },
+    );
+    expect(await call(IPC.downloadsList, undefined)).toMatchObject({
+      ok: true,
+      value: { jobs: [], pause: null, conflict: null },
+    });
+    // Rename decisions carry a name, never a path; resolvePlan validates it in main.
+    expect(
+      await call(IPC.downloadsResolvePlan, {
+        planId: S,
+        decisions: [{ itemId: S, action: 'rename', name: 'x', path: '/tmp/x' }],
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+    expect(dialogs).toEqual([]);
   });
 });

@@ -1,15 +1,25 @@
-import { app, BrowserWindow, nativeTheme } from 'electron';
+import { app, BrowserWindow, nativeTheme, shell } from 'electron';
 import started from 'electron-squirrel-startup';
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import type { ConnectionSnapshot } from '../shared/connection';
-import { IPC_EVENTS, type StartupNotice } from '../shared/ipc-contract';
-import { ConnectionManager } from './connections/connection-manager';
-import { TrustStore } from './connections/trust-store';
-import { registerIpcHandlers } from './ipc/handlers';
+import type { DownloadsSnapshot } from '../shared/downloads';
+import {
+  IPC_EVENTS,
+  type QuitChoice,
+  type QuitRequest,
+  type StartupNotice,
+} from '../shared/ipc-contract';
 import { BrowseService } from './connections/browse-service';
+import { ConnectionManager, StaleRequestError } from './connections/connection-manager';
+import { TrustStore } from './connections/trust-store';
+import { DownloadService } from './downloads/download-service';
+import { TransferJournal } from './downloads/journal';
+import { registerIpcHandlers } from './ipc/handlers';
 import { createIpcRouter } from './ipc/router';
-import { chooseFile } from './platform/dialogs';
+import { chooseDownloadFolder, chooseFile, chooseSavePath } from './platform/dialogs';
 import type { Recovery } from './platform/json-file';
+import { installAppMenu } from './platform/menu';
 import { SettingsStore } from './platform/settings-store';
 import {
   captureWindowState,
@@ -28,7 +38,11 @@ hardenWebContents();
 
 let mainWindow: BrowserWindow | null = null;
 
-function notice(file: StartupNotice['file'], r: Recovery | null, label: string): StartupNotice[] {
+function notice(
+  file: 'profiles' | 'settings' | 'trustedHosts' | 'transferJournal',
+  r: Recovery | null,
+  label: string,
+): StartupNotice[] {
   if (!r) return [];
   return [
     {
@@ -41,27 +55,103 @@ function notice(file: StartupNotice['file'], r: Recovery | null, label: string):
   ];
 }
 
+const send = (channel: string, value: unknown): void => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, value);
+};
+
 async function startApp(): Promise<void> {
+  installAppMenu(process.platform);
   const dir = app.getPath('userData');
   const profiles = new ProfileStore(dir);
   const settings = new SettingsStore(dir);
   const trust = new TrustStore(dir);
-  await Promise.all([profiles.load(), settings.load(), trust.load()]);
+  const journal = new TransferJournal(dir);
+  await Promise.all([profiles.load(), settings.load(), trust.load(), journal.load()]);
   const notices = [
     ...notice('profiles', profiles.recovered, 'saved servers'),
     ...notice('settings', settings.recovered, 'settings'),
     ...notice('trustedHosts', trust.recovered, 'trusted hosts'),
+    ...notice('transferJournal', journal.recovered, 'download records'),
   ];
   nativeTheme.themeSource = settings.get().theme;
 
+  let downloads: DownloadService | null = null;
   const connections = new ConnectionManager({
     getProfile: (id) => profiles.get(id),
     trust,
-    emit: (snap: ConnectionSnapshot) =>
-      mainWindow?.webContents.send(IPC_EVENTS.connectionState, snap),
+    emit: (snap: ConnectionSnapshot) => {
+      send(IPC_EVENTS.connectionState, snap);
+      downloads?.connectionChanged();
+    },
   });
 
   const browse = new BrowseService({ getSession: (id) => connections.getSession(id) });
+
+  downloads = new DownloadService({
+    connection: () => {
+      const s = connections.getSnapshot();
+      return {
+        sessionId: s.sessionId,
+        profileId: s.profileId,
+        profileName: s.profileName,
+        connected: s.state === 'connected',
+      };
+    },
+    getSession: (id) => connections.getSession(id),
+    getProfile: (id) => profiles.get(id),
+    saveDialog: (p) => chooseSavePath(mainWindow, p),
+    chooseDirectory: (p) => chooseDownloadFolder(mainWindow, p),
+    defaultDownloadDir: () => app.getPath('downloads'),
+    journal,
+    platform: process.platform,
+    emit: (s: DownloadsSnapshot) => send(IPC_EVENTS.downloads, s),
+    reveal: (p) => shell.showItemInFolder(p),
+    log: (m) => console.error(m),
+  });
+  const dl = downloads;
+
+  // Partial files from an earlier run (app-owned, journaled only): offer cleanup.
+  const orphans = await dl.findStartupOrphans().catch(() => []);
+  if (orphans.length > 0) {
+    notices.push({
+      id: 'orphan-partials',
+      kind: 'orphan-partials',
+      message: `${orphans.length} unfinished download${orphans.length === 1 ? '' : 's'} from an earlier session left partial files. Downloads never resume after a restart.`,
+      paths: orphans.map((o) => o.partPath),
+    });
+  }
+
+  // Quit/close with pending downloads (spec 7.3): the renderer asks the user.
+  let quitConfirmed = false;
+  let quitRequest: QuitRequest | null = null;
+  const askQuit = (): void => {
+    quitRequest ??= {
+      requestId: randomUUID(),
+      pendingCount: dl
+        .getSnapshot()
+        .jobs.filter((j) => j.state === 'queued' || j.state === 'downloading').length,
+    };
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      // No window to ask in: never leave a hidden background transfer.
+      quitConfirmed = true;
+      void dl.cancelAll().finally(() => app.quit());
+      return;
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    send(IPC_EVENTS.quitRequest, quitRequest);
+  };
+  const mustAsk = (): boolean => !quitConfirmed && dl.hasPending();
+
+  const resolveQuit = async (requestId: string, choice: QuitChoice): Promise<void> => {
+    if (!quitRequest || quitRequest.requestId !== requestId)
+      throw new StaleRequestError('Quit request');
+    quitRequest = null;
+    if (choice === 'keepDownloading') return;
+    await dl.cancelAll();
+    quitConfirmed = true;
+    app.quit();
+  };
 
   const rendererUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL ?? pathToFileURL(RENDERER_INDEX()).href;
   const router = createIpcRouter({
@@ -70,6 +160,8 @@ async function startApp(): Promise<void> {
     trust,
     connections,
     browse,
+    downloads: dl,
+    resolveQuit,
     notices,
     appInfo: () => ({
       name: app.getName(),
@@ -104,7 +196,13 @@ async function startApp(): Promise<void> {
   let geometrySaved = false;
   mainWindow.on('close', (event) => {
     const win = mainWindow;
-    if (geometrySaved || !win) return;
+    if (!win) return;
+    if (mustAsk()) {
+      event.preventDefault();
+      askQuit();
+      return;
+    }
+    if (geometrySaved) return;
     event.preventDefault();
     void settings
       .setWindow(captureWindowState(win))
@@ -117,7 +215,12 @@ async function startApp(): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (mustAsk()) {
+      event.preventDefault();
+      askQuit();
+      return;
+    }
     void connections.shutdown();
   });
 }

@@ -262,6 +262,7 @@ input[aria-invalid='true'] {
 .panel {
   flex: 1;
   display: flex;
+  min-height: 0;
 }
 .empty-state {
   margin: auto;
@@ -617,4 +618,189 @@ input.filter {
 }
 .browser-message {
   color: var(--fg);
+}
+
+/* ---------- downloads ---------- */
+.queue {
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  display: flex;
+  flex-direction: column;
+  max-height: 38vh;
+}
+.queue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  min-height: 32px;
+}
+.queue-toggle {
+  border: 0;
+  background: none;
+  font-weight: 600;
+  padding: 2px 4px;
+}
+.queue-summary {
+  color: var(--fg-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.queue-body {
+  overflow: auto;
+  padding: 0 12px 8px;
+  min-height: 0;
+}
+.queue-empty {
+  color: var(--fg-2);
+  margin: 4px 0 8px;
+}
+.queue-note,
+.queue-pause {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.queue-pause {
+  border-color: var(--warn);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.queue-pause p {
+  margin: 0;
+  flex: 1 1 260px;
+}
+button.link {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  padding: 0;
+  text-decoration: underline;
+}
+.queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.job {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.job-main,
+.job-meta,
+.job-progress,
+.job-error,
+.job-note {
+  grid-column: 1;
+  min-width: 0;
+}
+.job-actions {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.job-main {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.job-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.job-state {
+  font-size: 12px;
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+.state-completed {
+  color: var(--ok);
+}
+.state-failed {
+  color: var(--danger);
+}
+.job-progress {
+  width: 100%;
+  height: 6px;
+}
+.job-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.job-dest {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.job-bytes {
+  white-space: nowrap;
+  margin-left: auto;
+}
+.job-error,
+.job-note {
+  font-size: 12px;
+}
+.job-error {
+  color: var(--danger);
+}
+.job-error details,
+.job-note code {
+  color: var(--fg-2);
+  word-break: break-all;
+}
+.dialog-sub {
+  color: var(--fg-2);
+  font-size: 12px;
+  word-break: break-all;
+}
+.plan-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow: auto;
+}
+.plan-items li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.plan-name {
+  font-weight: 600;
+  word-break: break-all;
+}
+.plan-msg {
+  margin: 2px 0 6px;
+  color: var(--fg-2);
+}
+.plan-rename {
+  width: 100%;
+  margin-top: 6px;
+}
+.notice-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.path-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  word-break: break-all;
 }
