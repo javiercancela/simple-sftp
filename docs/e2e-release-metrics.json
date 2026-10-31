@@ -1,11 +1,12 @@
 {
-  "measuredAt": "2026-10-31T14:36:32.852Z",
+  "measuredAt": "2026-10-31T18:43:53.790Z",
   "environment": "Linux, xvfb, Electron app against sshd on 127.0.0.1",
   "a5": "expired cert → CERT_EXPIRED; replaced file → sshd \"Accepted certificate ID renewed-1\"; replaced again → \"renewed-2\"; same app process",
-  "a3": "scanned 63 files (2768 KiB) under the data folder incl. Chromium storage for the passphrase (utf8/utf16le/base64), the wrong passphrase and private key material: 0 hits",
+  "a3": "scanned 64 files (2773 KiB) under the data folder incl. Chromium storage for the passphrase (utf8/utf16le/base64), the wrong passphrase and private key material: 0 hits",
   "a3Files": [
+    "SimpleSFTP/Cache/Cache_Data/971207d0fcfaf13d_0",
     "SimpleSFTP/Cache/Cache_Data/c67e119a16e1cc54_0",
-    "SimpleSFTP/Cache/Cache_Data/f95ac7105b165b15_0",
+    "SimpleSFTP/Cache/Cache_Data/d7ebc1771911c5be_0",
     "SimpleSFTP/Cache/Cache_Data/index",
     "SimpleSFTP/Cache/Cache_Data/index-dir/the-real-index",
     "SimpleSFTP/Cache/No_Vary_Search/journal.baj",
@@ -68,6 +69,6 @@
     "SimpleSFTP/transfer-journal.json",
     "SimpleSFTP/trusted-hosts.json"
   ],
-  "a13Idle": "app.quit() while connected: 6 app processes exited in 157 ms; server sessions ended; sshd: \"Received disconnect from 127.0.0.1 port 59054:11: \"",
-  "a13Pending": "quit with a download in flight (server frozen): prompt shown; Keep downloading kept it running; Cancel downloads and quit → 6 app processes exited in 238 ms, server sessions ended, no partial file, journal empty"
+  "a13Idle": "app.quit() while connected: 6 app processes exited in 142 ms; server sessions ended; sshd: \"Received disconnect from 127.0.0.1 port 45318:11: \"",
+  "a13Pending": "quit with a download in flight (server frozen): prompt shown; Keep downloading kept it running; Cancel downloads and quit → 6 app processes exited in 259 ms, server sessions ended, no partial file, journal empty"
 }

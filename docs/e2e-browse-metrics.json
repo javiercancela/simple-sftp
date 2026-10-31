@@ -1,12 +1,12 @@
 {
-  "measuredAt": "2026-10-31T14:36:00.339Z",
+  "measuredAt": "2026-10-31T18:43:12.137Z",
   "environment": "Linux, xvfb software rendering, sshd on 127.0.0.1",
   "open10k_ms": "188",
   "domRowsRendered": "29",
-  "scroll10k": "100 scroll steps top→bottom in 1658 ms; frame gap p95 17 ms, max 17 ms",
-  "keyboardEnd10k_ms": "31",
-  "filter10k_type4keys_ms": "26",
+  "scroll10k": "100 scroll steps top→bottom in 1675 ms; frame gap p95 17 ms, max 33 ms",
+  "keyboardEnd10k_ms": "38",
+  "filter10k_type4keys_ms": "34",
   "filter10k_perKeystroke": "avg 33 ms, max 34 ms (input → painted)",
-  "loadingStateShown_ms": "221",
-  "disconnectFrozenServer_ms": "3343"
+  "loadingStateShown_ms": "203",
+  "disconnectFrozenServer_ms": "3340"
 }

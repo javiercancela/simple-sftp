@@ -559,6 +559,9 @@ describe.skipIf(!bin || !built)('Image preview end-to-end (real sshd, xvfb)', ()
   it('nothing is written to local disk: no image bytes or markers in app data or temp', async () => {
     // Previewed marked.png (in the rapid test) and evil.svg, both carry MARKER.
     const files = [...(await walk(CONFIG_HOME)), ...(await walk(APP_TMP))];
+    // The app's own data and Chromium's storage are there: the scan is not empty.
+    expect(files.length).toBeGreaterThan(10);
+    expect(files.some((f) => f.endsWith('profiles.json'))).toBe(true);
     const needle = Buffer.from(MARKER);
     const sunsetBody = (await readFile(join(IMAGES, 'sunset.png'))).subarray(200, 264);
     const hits: string[] = [];
