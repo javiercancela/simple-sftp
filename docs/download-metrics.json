@@ -1,0 +1,6 @@
+{
+  "measuredAt": "2026-10-31T14:03:07.884Z",
+  "environment": "Linux, DownloadService in Node against OpenSSH 10.0p2 sshd on 127.0.0.1",
+  "huge": "4.005 GiB in 14.6 s (281 MiB/s); RSS baseline 167 MiB, peak 172 MiB (+4 MiB)",
+  "cancelFrozen_ms": "19"
+}

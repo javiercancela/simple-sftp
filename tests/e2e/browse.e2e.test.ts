@@ -285,7 +285,7 @@ describe.skipIf(!bin || !built)('Browsing end-to-end (real sshd, xvfb)', () => {
     expect(await row('link to nested').locator('.cell-type').innerText()).toBe('Link to folder');
     expect(await row('link to report').locator('.cell-type').innerText()).toBe('Link to file');
     expect(await row('broken link').locator('.cell-type').innerText()).toBe('Broken link');
-    expect(await page.getByRole('button', { name: /^Download/ }).isDisabled()).toBe(true);
+    expect(await page.getByTestId('download-button').isDisabled()).toBe(true);
     await shot('11-browser-root.png');
   });
 

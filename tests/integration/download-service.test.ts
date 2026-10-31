@@ -218,6 +218,8 @@ describe.skipIf(!bin)('DownloadService against real sshd and the real filesystem
     expect(await listDir(dir)).toEqual(['ordinary.bin', 'zero.bin']);
     expect(await sha256(join(dir, 'zero.bin'))).toBe(hashes['zero.bin']);
     expect(await sha256(join(dir, 'ordinary.bin'))).toBe(hashes['ordinary.bin']);
+    metrics.zeroSha256 = hashes['zero.bin']!;
+    metrics.ordinarySha256 = hashes['ordinary.bin']!;
     expect(h.job(ids[0]!).bytes).toBe(0);
     expect(h.job(ids[0]!).total).toBe(0);
     expect(h.job(ids[1]!).bytes).toBe(3 * MiB + 17);
@@ -264,7 +266,9 @@ describe.skipIf(!bin)('DownloadService against real sshd and the real filesystem
     expect(j.total).toBe(HUGE_SIZE);
     expect(j.bytes).toBe(HUGE_SIZE); // no 32-bit truncation
     expect((await lstat(join(dir, 'huge.bin'))).size).toBe(HUGE_SIZE);
-    expect(await sha256(join(dir, 'huge.bin'))).toBe(hashes['huge.bin']);
+    const hugeLocal = await sha256(join(dir, 'huge.bin'));
+    expect(hugeLocal).toBe(hashes['huge.bin']);
+    metrics.hugeSha256 = `local ${hugeLocal} = remote ${hashes['huge.bin']}`;
     const delta = (peak - base) / MiB;
     metrics.huge = `${(HUGE_SIZE / GiB).toFixed(3)} GiB in ${secs.toFixed(1)} s (${(HUGE_SIZE / MiB / secs).toFixed(0)} MiB/s); RSS baseline ${(base / MiB).toFixed(0)} MiB, peak ${(peak / MiB).toFixed(0)} MiB (+${delta.toFixed(0)} MiB)`;
     expect(delta).toBeLessThan(256);
