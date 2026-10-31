@@ -161,7 +161,6 @@ describe.skipIf(!bin || apps.length === 0)('smoke-flavored package: transport sm
 
   afterAll(async () => {
     await server?.stop();
-    if (!process.env.KEEP_TEST_TMP) await rm(TMP, { recursive: true, force: true });
   });
 
   for (const app of apps) {
@@ -209,6 +208,11 @@ describe.skipIf(!bin || apps.length === 0)('smoke-flavored package: transport sm
       expect(String(result.mainScript)).toMatch(/app\.asar/);
     }, 120_000);
   }
+});
+
+// File level: runs after both groups below (the release group also writes into TMP).
+afterAll(async () => {
+  if (!process.env.KEEP_TEST_TMP) await rm(TMP, { recursive: true, force: true });
 });
 
 describe.skipIf(releaseApps.length === 0)('release artifacts: smoke hook compiled out', () => {

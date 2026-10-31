@@ -157,8 +157,10 @@ class Session implements SftpSession {
     sftp.on('close', onSftpEnd);
     client.on('close', () => {
       if (!this.disconnecting) {
+        // Same wording as a failed download (spec 10); the cause is in the details.
         this.closeError ??= new TransportError(
           'CONNECTION_LOST',
+          'The connection to the server was lost.',
           'The server closed the connection.',
         );
       }
