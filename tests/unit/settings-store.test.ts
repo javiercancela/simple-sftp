@@ -17,6 +17,8 @@ describe('settings and atomic JSON', () => {
       sidebarWidth: 260,
       lastSelectedProfileId: null,
       window: null,
+      browserView: 'list',
+      previewSize: 'small',
     });
     await s.update({ theme: 'light', sidebarWidth: 300 });
     await s.setWindow({ x: 10, y: 20, width: 1000, height: 700, maximized: false });
@@ -36,7 +38,37 @@ describe('settings and atomic JSON', () => {
     await expect(s.update({ sidebarWidth: 10 })).rejects.toThrow();
     await expect(s.update({ theme: 'blue' })).rejects.toThrow();
     await expect(s.update({ password: 'x' })).rejects.toThrow();
+    await expect(s.update({ browserView: 'grid' })).rejects.toThrow();
+    await expect(s.update({ previewSize: 'medium' })).rejects.toThrow();
     await expect(readFile(join(dir, 'settings.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('an older settings file without view fields loads as list / small, and the choice persists', async () => {
+    const dir = await tmp();
+    await writeFile(
+      join(dir, 'settings.json'),
+      JSON.stringify({
+        version: 1,
+        theme: 'dark',
+        sidebarWidth: 200,
+        lastSelectedProfileId: null,
+        window: null,
+      }),
+    );
+    const s = new SettingsStore(dir);
+    await s.load();
+    expect(s.recovered).toBeNull();
+    expect(s.get().browserView).toBe('list');
+    expect(s.get().previewSize).toBe('small');
+    await s.update({ browserView: 'preview', previewSize: 'large' });
+    const again = new SettingsStore(dir);
+    await again.load();
+    expect(again.get()).toMatchObject({
+      theme: 'dark',
+      sidebarWidth: 200,
+      browserView: 'preview',
+      previewSize: 'large',
+    });
   });
 
   it('a corrupt settings file is preserved and defaults are used', async () => {

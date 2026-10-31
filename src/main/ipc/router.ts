@@ -19,6 +19,7 @@ import { StaleRequestError, type ConnectionManager } from '../connections/connec
 import { isTransportError } from '../connections/errors';
 import type { BrowseService } from '../connections/browse-service';
 import type { PreviewService } from '../connections/preview-service';
+import type { ThumbnailService } from '../connections/thumbnail-service';
 import { DownloadRequestError, type DownloadService } from '../downloads/download-service';
 import type { CollisionChoice, PlanDecision } from '../../shared/downloads';
 import type { QuitChoice } from '../../shared/ipc-contract';
@@ -46,6 +47,7 @@ export interface RouterServices {
   connections: ConnectionManager;
   browse: BrowseService;
   preview: PreviewService;
+  thumbnails: ThumbnailService;
   downloads: DownloadService;
   /** Answer to a quit prompt (main owns the quit flow). */
   resolveQuit(requestId: string, choice: QuitChoice): Promise<void>;
@@ -154,6 +156,20 @@ export function createIpcRouter(s: RouterServices) {
       s.preview.preview(p.sessionId, p.requestId, p.path),
     [IPC.remoteCancelPreview]: (p: { sessionId: string; requestId: string }) => {
       if (!s.preview.cancel(p.sessionId, p.requestId)) throw new StaleRequestError('Request');
+      return null;
+    },
+    [IPC.remoteThumbnail]: (p: {
+      sessionId: string;
+      requestId: string;
+      path: string;
+      size: 'small' | 'large';
+    }) => s.thumbnails.thumbnail(p.sessionId, p.requestId, p.path, p.size),
+    [IPC.remoteCancelThumbnail]: (p: { sessionId: string; requestId: string }) => {
+      if (!s.thumbnails.cancel(p.sessionId, p.requestId)) throw new StaleRequestError('Request');
+      return null;
+    },
+    [IPC.previewsClearCache]: async () => {
+      await s.thumbnails.clearCache();
       return null;
     },
     [IPC.downloadsList]: () => s.downloads.getSnapshot(),

@@ -21,7 +21,8 @@
     "postinstall": "patch-package --error-on-fail",
     "test:unit": "vitest run tests/unit",
     "test:e2e": "node scripts/run-e2e.mjs",
-    "notices": "node scripts/generate-notices.mjs"
+    "notices": "node scripts/generate-notices.mjs",
+    "icons": "electron scripts/generate-icons.cjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "8.0.1",

@@ -15,6 +15,7 @@ export function SettingsDialog({
 }): React.JSX.Element {
   const [hosts, setHosts] = useState<TrustedHostEntry[] | null>(null);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
+  const [cacheNote, setCacheNote] = useState<string | null>(null);
   const load = (): void => {
     void api()
       .trustedHosts.list()
@@ -36,6 +37,30 @@ export function SettingsDialog({
           <option value="dark">Dark</option>
         </select>
       </div>
+      <h3>Preview cache</h3>
+      <p className="hint">
+        Small copies of remote images, stored on this computer for the current view. Clearing it
+        does not change servers, keys or downloads.
+      </p>
+      <div className="dialog-actions">
+        <button
+          type="button"
+          data-testid="clear-preview-cache"
+          onClick={() => {
+            setCacheNote(null);
+            void api()
+              .previews.clearCache()
+              .then((r) => setCacheNote(r.ok ? 'Preview cache cleared.' : r.error.message));
+          }}
+        >
+          Clear preview cache
+        </button>
+      </div>
+      {cacheNote && (
+        <p className="hint" role="status" data-testid="preview-cache-note">
+          {cacheNote}
+        </p>
+      )}
       <h3>Trusted hosts</h3>
       {hosts === null ? (
         <p>Loading…</p>

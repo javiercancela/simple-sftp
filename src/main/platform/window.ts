@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, session } from 'electron';
+import { app, BrowserWindow, nativeImage, screen, session } from 'electron';
 import path from 'node:path';
 import type { WindowState } from '../../shared/settings';
 
@@ -6,7 +6,7 @@ const PROD_CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
-  // blob: only for the in-memory image preview (version 2); nothing remote.
+  // blob: for the in-memory full preview and grid thumbnails (version 2); nothing remote.
   "img-src 'self' blob:",
   "font-src 'self'",
   "connect-src 'none'",
@@ -18,6 +18,19 @@ const PROD_CSP = [
 
 export const RENDERER_INDEX = (): string =>
   path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+
+/** PNG window icon. Packaged builds copy it next to the app; dev uses the repo file. */
+export function appIconFile(): string {
+  if (app.isPackaged) return path.join(process.resourcesPath, 'icon.png');
+  return path.join(app.getAppPath(), 'resources', 'icons', 'icon.png');
+}
+
+/** macOS dock icon in dev (packaged builds use the .icns in the bundle). */
+export function applyDockIcon(): void {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  const icon = nativeImage.createFromPath(appIconFile());
+  if (!icon.isEmpty()) app.dock.setIcon(icon);
+}
 
 function visible(state: WindowState): boolean {
   if (state.x === undefined || state.y === undefined) return false;
@@ -44,6 +57,7 @@ export function createMainWindow(opts: {
     minHeight: 420,
     show: false,
     title: 'SimpleSFTP',
+    icon: appIconFile(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,

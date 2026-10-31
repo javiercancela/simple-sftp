@@ -36,6 +36,8 @@ export class SettingsStore {
     if (p.theme !== undefined) next.theme = p.theme;
     if (p.sidebarWidth !== undefined) next.sidebarWidth = p.sidebarWidth;
     if (p.lastSelectedProfileId !== undefined) next.lastSelectedProfileId = p.lastSelectedProfileId;
+    if (p.browserView !== undefined) next.browserView = p.browserView;
+    if (p.previewSize !== undefined) next.previewSize = p.previewSize;
     await this.file.save(next);
     this.data = next;
     return this.get();

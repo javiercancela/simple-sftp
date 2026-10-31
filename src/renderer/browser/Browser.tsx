@@ -9,6 +9,7 @@ import {
   clickSelect,
   emptySelection,
   filterEntries,
+  gridKeySelect,
   isDirLike,
   isHidden,
   keySelect,
@@ -17,6 +18,7 @@ import {
   sortEntries,
   toggleActive,
   type BrowseEntry,
+  type GridNavKey,
   type NavKey,
   type Selection,
   type SortKey,
@@ -30,8 +32,10 @@ import {
   resolveLocationInput,
 } from '../../shared/remote-path';
 import { isPreviewable } from '../../shared/preview';
+import type { BrowserView, PreviewSize } from '../../shared/settings';
 import { FileTable } from './FileTable';
 import { PreviewDialog } from './PreviewDialog';
+import { PreviewGrid } from './PreviewGrid';
 import { useBrowser, type BrowserApi, type BrowserSession } from './useBrowser';
 
 const LOADING_DELAY_MS = 150;
@@ -44,12 +48,25 @@ const NAV_KEYS: Record<string, NavKey> = {
   PageUp: 'PageUp',
   PageDown: 'PageDown',
 };
+const GRID_KEYS: Record<string, GridNavKey> = {
+  ...NAV_KEYS,
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+};
 
 export function Browser({
   session,
+  viewMode,
+  previewSize,
+  onViewMode,
+  onPreviewSize,
   onDownload,
 }: {
   session: BrowserSession;
+  viewMode: BrowserView;
+  previewSize: PreviewSize;
+  onViewMode(mode: BrowserView): void;
+  onPreviewSize(size: PreviewSize): void;
   /** Ask main to choose a destination and queue these remote files. */
   onDownload: (paths: string[]) => void;
 }): React.JSX.Element {
@@ -170,12 +187,11 @@ export function Browser({
     }
   };
 
-  const onTableKeyDown = (ev: React.KeyboardEvent, pageSize: number): void => {
+  const onSelectionKey = (ev: React.KeyboardEvent, apply: () => void): void => {
     const toggle = isMac ? ev.metaKey : ev.ctrlKey;
-    const k = NAV_KEYS[ev.key];
-    if (k && !ev.altKey) {
+    if ((viewMode === 'preview' ? GRID_KEYS[ev.key] : NAV_KEYS[ev.key]) && !ev.altKey) {
       ev.preventDefault();
-      setSelection((s) => keySelect(s, names, k, { shift: ev.shiftKey, toggle }, pageSize));
+      apply();
     } else if (ev.key === 'a' && toggle) {
       ev.preventDefault();
       setSelection((s) => selectAll(names, s));
@@ -284,28 +300,58 @@ export function Browser({
       </div>
     );
   } else if (view.kind === 'ready') {
-    body = (
-      <FileTable
-        entries={visible}
-        selection={selection}
-        sort={sort}
-        onSort={onSort}
-        key={view.path}
-        onRowClick={(i, ev) =>
-          setSelection((s) =>
-            clickSelect(s, names, i, {
-              shift: ev.shiftKey,
-              toggle: isMac ? ev.metaKey : ev.ctrlKey,
-            }),
-          )
-        }
-        onRowOpen={(i) => {
-          const e = visible[i];
-          if (e) open(e);
-        }}
-        onKeyDown={onTableKeyDown}
-      />
-    );
+    const onRowClick = (i: number, ev: React.MouseEvent): void =>
+      setSelection((s) =>
+        clickSelect(s, names, i, {
+          shift: ev.shiftKey,
+          toggle: isMac ? ev.metaKey : ev.ctrlKey,
+        }),
+      );
+    const onRowOpen = (i: number): void => {
+      const e = visible[i];
+      if (e) open(e);
+    };
+    body =
+      viewMode === 'preview' ? (
+        <PreviewGrid
+          key={`${view.path}:${previewSize}`}
+          entries={visible}
+          selection={selection}
+          dir={view.path}
+          sessionId={session.sessionId}
+          size={previewSize}
+          onRowClick={onRowClick}
+          onRowOpen={onRowOpen}
+          onKeyDown={(ev, columns, pageRows) =>
+            onSelectionKey(ev, () => {
+              const k = GRID_KEYS[ev.key];
+              if (!k) return;
+              const toggle = isMac ? ev.metaKey : ev.ctrlKey;
+              setSelection((s) =>
+                gridKeySelect(s, names, k, columns, { shift: ev.shiftKey, toggle }, pageRows),
+              );
+            })
+          }
+        />
+      ) : (
+        <FileTable
+          entries={visible}
+          selection={selection}
+          sort={sort}
+          onSort={onSort}
+          key={view.path}
+          onRowClick={onRowClick}
+          onRowOpen={onRowOpen}
+          onKeyDown={(ev, pageSize) =>
+            onSelectionKey(ev, () => {
+              const k = NAV_KEYS[ev.key];
+              if (!k) return;
+              const toggle = isMac ? ev.metaKey : ev.ctrlKey;
+              setSelection((s) => keySelect(s, names, k, { shift: ev.shiftKey, toggle }, pageSize));
+            })
+          }
+        />
+      );
   } else {
     body = <div className="browser-state" />;
   }
@@ -316,6 +362,8 @@ export function Browser({
       data-testid="browser"
       data-view-path={viewPath ?? ''}
       data-view-kind={view.kind}
+      data-view-mode={viewMode}
+      data-preview-size={previewSize}
       data-busy={b.pending ? 'true' : 'false'}
       onKeyDown={onBrowserKeyDown}
     >
@@ -434,6 +482,46 @@ export function Browser({
           />
           Show hidden files
         </label>
+        <div className="view-toggle" role="group" aria-label="View">
+          <button
+            type="button"
+            aria-pressed={viewMode === 'list'}
+            data-testid="view-list"
+            title="List"
+            onClick={() => onViewMode('list')}
+          >
+            List
+          </button>
+          <button
+            type="button"
+            aria-pressed={viewMode === 'preview'}
+            data-testid="view-preview"
+            title="Preview"
+            onClick={() => onViewMode('preview')}
+          >
+            Preview
+          </button>
+        </div>
+        {viewMode === 'preview' && (
+          <div className="view-toggle" role="group" aria-label="Preview size">
+            <button
+              type="button"
+              aria-pressed={previewSize === 'small'}
+              data-testid="preview-size-small"
+              onClick={() => onPreviewSize('small')}
+            >
+              Small
+            </button>
+            <button
+              type="button"
+              aria-pressed={previewSize === 'large'}
+              data-testid="preview-size-large"
+              onClick={() => onPreviewSize('large')}
+            >
+              Large
+            </button>
+          </div>
+        )}
         <span className="spacer" />
         <button
           type="button"

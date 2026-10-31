@@ -150,10 +150,44 @@ queues the shown file through the normal download flow.
 - **Safety:** main reads through the same read-only session (`lstat`, then a
   read stream; nothing else). The renderer shows the bytes from a `blob:` URL
   in an `<img>` element; images loaded that way (including SVG) never run
-  scripts and never load external resources. The production CSP changed from
-  `img-src 'self' data:` to `img-src 'self' blob:` (nothing used `data:`); no
-  other CSP change. Nothing is written to disk: the bytes live in memory only
-  and the blob URL is revoked when the image changes or the preview closes.
+  scripts and never load external resources. The production CSP is
+  `img-src 'self' blob:` (grid thumbnails use the same `blob:` URLs; nothing
+  remote, no `data:`). The full-size preview is not written to disk: those
+  bytes live in memory only and the blob URL is revoked when the image changes
+  or the preview closes.
+
+### Preview mode (version 2)
+
+The file listing has two views, **List** (the table above) and **Preview**.
+In Preview, image files are shown in a grid; everything else is an icon and
+its name. **Small** and **Large** set the thumbnail's longest edge to 160px
+and 320px. The choice of view and size is saved in `settings.json` (no
+secrets) and restored on the next launch. Double-click, Enter, Download and
+Space (the full preview) work the same as in List. Arrow keys move by tile.
+
+Only tiles on screen are mounted, and only those image files are fetched, at
+most three at a time. Scrolling a tile away, changing folder, or disconnecting
+cancels that read. The 20 MiB cap and the magic-byte check are the same as the
+full preview; a file that fails them keeps its icon.
+
+**Thumbnail cache** (`preview-cache/` under the app's user-data directory):
+
+- Main generates the small PNG once. SVG, and formats the resizer cannot
+  decode (GIF, WebP, AVIF, some BMP/ICO), are kept as-is when they are at most
+  512 KiB and shown in `<img>` so they cannot run scripts. Larger ones keep
+  the file icon; the full preview still loads them. Files are mode `0600`.
+- The file name is the SHA-256 of the profile id, the live session's host-key
+  fingerprint, the normalized remote path, the size, the modification time and
+  the byte size. The remote name is never used as a path, so it cannot escape
+  the cache directory. A different server (different profile or host key)
+  hashes to a different name and cannot be served this server's bytes. The
+  renderer cannot supply the profile or the fingerprint.
+- An in-memory LRU (32 MiB) sits in front of the files. The directory is
+  capped at 128 MiB; the least recently used files are deleted past that.
+  Changing the file's mtime or size misses. SFTP's mtime is one-second
+  resolution, so a same-second rewrite of the same length can stay stale until
+  then. Settings → **Clear preview cache** deletes the directory.
+- The cache holds thumbnails only, never passwords, passphrases or key files.
 
 **Deliberate exception to spec 7.2.** Spec 7.2 says file bytes are never
 forwarded through renderer IPC and never loaded whole into memory. The image
@@ -181,7 +215,8 @@ macOS `~/Library/Application Support/SimpleSFTP`, Windows `%APPDATA%\SimpleSFTP`
 | ----------------------- | ---------------------------------------------------------------------------------------------- |
 | `profiles.json`         | Versioned list of profiles: names, hosts, ports, usernames, **paths** to key/certificate files |
 | `trusted-hosts.json`    | Accepted host keys keyed by `host:port` (SHA-256 fingerprint + algorithm)                      |
-| `settings.json`         | Theme, sidebar width, window geometry, last selected profile                                   |
+| `settings.json`         | Theme, sidebar width, window geometry, last selected profile, list/preview view, preview size  |
+| `preview-cache/`        | Downsized image thumbnails (see [Preview mode](#preview-mode-version-2)). Not credentials.     |
 | `transfer-journal.json` | Partial files of downloads in progress (path, device/inode), for cleanup after a crash         |
 
 No passwords, passphrases or key contents are ever written. Files are written
@@ -238,6 +273,7 @@ A platform counts as supported only after its packaged build passes
 | `npm run make`           | Build release installers/archives for the current OS into `out/make/`                                                        |
 | `npm run smoke:packaged` | Build a smoke-flavored package into `out-smoke/`, run it against a real sshd, and check the release artifacts (after `make`) |
 | `npm run notices`        | Regenerate `THIRD_PARTY_NOTICES.md` from the production dependencies (a unit test fails when it is stale)                    |
+| `npm run icons`          | Rebuild `resources/icons/icon.png`, `.ico` and `.icns` from `source.png` (Electron resizes; no iconutil)                     |
 
 The E2E tests drive the production renderer/main bundle with the development
 Electron binary (the packaged app's fuses block automation, by design). They

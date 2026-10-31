@@ -1,6 +1,9 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BrowseService } from '../../src/main/connections/browse-service';
 import { PreviewService } from '../../src/main/connections/preview-service';
+import { ThumbnailService } from '../../src/main/connections/thumbnail-service';
+import { PreviewCache } from '../../src/main/platform/preview-cache';
 import {
   ConnectionManager,
   StaleRequestError,
@@ -77,6 +80,12 @@ async function setup(dir: string) {
     connections,
     browse: new BrowseService({ getSession: (id) => connections.getSession(id) }),
     preview: new PreviewService({ getSession: (id) => connections.getSession(id) }),
+    thumbnails: new ThumbnailService({
+      getSession: (id) => connections.getSession(id),
+      getIdentity: () => null,
+      cache: new PreviewCache(join(dir, 'preview-cache')),
+      encode: async () => null,
+    }),
     downloads,
     resolveQuit: () => Promise.reject(new StaleRequestError('Quit request')),
     appInfo: () => ({
@@ -154,6 +163,23 @@ describe('IPC router', () => {
       { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/\u0000.png' },
     ],
     [IPC.remoteCancelPreview, { sessionId: RANDOM_UUID, requestId: 7 }],
+    [IPC.remoteThumbnail, { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/a.png' }],
+    [
+      IPC.remoteThumbnail,
+      { sessionId: RANDOM_UUID, requestId: RANDOM_UUID, path: '/a.png', size: 'huge' },
+    ],
+    [
+      IPC.remoteThumbnail,
+      {
+        sessionId: RANDOM_UUID,
+        requestId: RANDOM_UUID,
+        path: '/a.png',
+        size: 'small',
+        profileId: RANDOM_UUID,
+      },
+    ],
+    [IPC.remoteCancelThumbnail, { sessionId: RANDOM_UUID }],
+    [IPC.previewsClearCache, { extra: true }],
   ])('%s rejects malformed payload %j', async (channel, payload) => {
     const { router } = await setup(await tmp());
     expect(await router.invoke(channel, TRUSTED, payload)).toMatchObject({
@@ -261,6 +287,28 @@ describe('IPC router', () => {
         requestId: RANDOM_UUID,
       }),
     ).toMatchObject({ ok: false, error: { code: 'STALE' } });
+  });
+
+  it('remote.thumbnail needs a live session; clearing the cache does not', async () => {
+    const { router } = await setup(await tmp());
+    expect(
+      await router.invoke(IPC.remoteThumbnail, TRUSTED, {
+        sessionId: RANDOM_UUID,
+        requestId: RANDOM_UUID,
+        path: '/srv/a.png',
+        size: 'large',
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'DISCONNECTED' } });
+    expect(
+      await router.invoke(IPC.remoteCancelThumbnail, TRUSTED, {
+        sessionId: RANDOM_UUID,
+        requestId: RANDOM_UUID,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'STALE' } });
+    expect(await router.invoke(IPC.previewsClearCache, TRUSTED, undefined)).toEqual({
+      ok: true,
+      value: null,
+    });
   });
 
   it('removing an unknown trusted host is NOT_FOUND', async () => {

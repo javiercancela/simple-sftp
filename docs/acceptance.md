@@ -51,6 +51,51 @@ production CSP changed only in `img-src`: `'self' data:` → `'self' blob:`.
 | Keyboard, focus, labels                                            | **Pass (Linux)** | Space opens, ← / → step, Backspace/Alt+↑ don't navigate underneath, Esc closes and focus returns to the table with the last image selected; dialog named by the file name; double-click still downloads.                              |
 | Nothing written to disk                                            | **Pass (Linux)** | After all previews, every file under the app's config folder and its `TMPDIR` is scanned for a random marker embedded in the previewed SVG and PNG and for PNG pixel data: 0 hits, 0 image files.                                     |
 
+## Version 2: preview grid, thumbnail cache, application icon
+
+Not a spec criterion. List / Preview and Small / Large are stored in
+`settings.json` (older files with no view fields still load; missing means
+list and small). The grid only mounts visible tiles. Thumbnails use the same
+read-only session, 20 MiB cap and magic-byte check as the full preview, at
+most three reads at a time, and a read is cancelled when its tile goes away.
+The cache is described in the README ("Preview mode"): SHA-256 file names
+under `userData/preview-cache`, keyed by profile id + live host-key
+fingerprint + path + size + mtime + byte size, 32 MiB memory LRU, 128 MiB
+disk cap, cleared from Settings. `img-src` stays `'self' blob:`.
+
+The window icon and the packaged Linux/macOS/Windows icons are generated from
+`resources/icons/source.png` by `npm run icons` (Electron `nativeImage` plus
+a small ICO/ICNS writer in `scripts/generate-icons.cjs`). Forge's packager
+`icon` and the `.deb` maker point at those files; the window loads
+`icon.png` from the repo in development and from `extraResource` when
+packaged. macOS and Windows packages were not built here.
+
+| Check                                                  | Status                | Evidence                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| View toggle and persistence                            | **Pass (Linux)**      | `settings-store.test.ts` (old file defaults, round-trip); `preview-grid.e2e.test.ts` restarts the app and is still on Preview / Large. Screenshot 50.                                                                                                                                                                                                                      |
+| Two thumbnail sizes                                    | **Pass (Linux)**      | Unit: distinct cache keys and encode edges (160 / 320). E2E: small natural width ≤ 160, large is bigger and ≤ 320, tile box grows. Screenshots 51, 52.                                                                                                                                                                                                                     |
+| Visible-only window                                    | **Pass (Linux)**      | `tileWindow` on 10,000 entries stays under 80 mounted indexes.                                                                                                                                                                                                                                                                                                             |
+| Cache hit / miss / invalidation / eviction / isolation | **Pass (Linux)**      | `preview-cache.test.ts`, `thumbnail-service.test.ts`, `thumbnail-service.test.ts` (integration, real sshd).                                                                                                                                                                                                                                                                |
+| Cache is not a credential and not a path               | **Pass (Linux)**      | Unit: remote path and `OPENSSH` are absent; symlink in the cache is not followed. E2E: cache files are 64-hex names and do not contain the private key.                                                                                                                                                                                                                    |
+| Cap, cancel, concurrency                               | **Pass (Linux)**      | Unit: over-cap from stat reads 0 times and is cached; queued cancel never reads; concurrency 2; clear does not let an in-flight encode repopulate.                                                                                                                                                                                                                         |
+| Selection, download, full preview, folders             | **Pass (Linux)**      | `preview-grid.e2e.test.ts`.                                                                                                                                                                                                                                                                                                                                                |
+| Icon containers                                        | **Pass (Linux)**      | `app-icon.test.ts` checks PNG 1024² RGBA, ICO sizes, ICNS types. `npm run make`: the zip has `resources/icon.png` and the `.deb` installs that same file as `usr/share/pixmaps/simple-sftp.png` (`Icon=simple-sftp`) plus `resources/icon.png`. macOS `.icns` and Windows `.ico` are committed; Forge's `icon` (no extension) selects them. Those packages were not built. |
+| macOS / Windows                                        | **Not testable here** | Icons are generated, not installed on those OSes.                                                                                                                                                                                                                                                                                                                          |
+
+Run for this change (Linux x64, xvfb, OpenSSH 10.0p2 from the Debian sshd
+fetched by `scripts/fetch-test-sshd-debian.sh`, because this box's
+`/usr/sbin/sshd` is OpenSSH 9.6 and rejects `PerSourcePenalties`):
+
+| Step                      | Result                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `npm run typecheck`       | ok                                                                            |
+| `npm run lint`            | ok                                                                            |
+| `npm test`                | 24 files passed, 1 skipped; 380 tests passed, 1 skipped (disk-full inner)     |
+| `npm run test:e2e` (xvfb) | 6 files, 56 tests passed                                                      |
+| `npm run make`            | Linux `.deb` and portable `.zip`; icon bytes match `resources/icons/icon.png` |
+
+macOS and Windows were not built or run.
+
 ## Last full run (2026-10-31, built from commit `d5df3cc`, includes the image preview)
 
 Clean tree (`git clean -fdX`), then in order, all exit 0:

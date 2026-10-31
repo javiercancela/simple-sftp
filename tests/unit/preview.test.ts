@@ -14,6 +14,9 @@ import {
   markCorrupt,
   startPreview,
   stepPreview,
+  tileWindow,
+  THUMBNAIL_MAX_EDGE,
+  TILE_PX,
   type ImagePreview,
 } from '../../src/shared/preview';
 import type { RemoteStat } from '../../src/shared/transport-contract';
@@ -301,6 +304,39 @@ describe('preview: renderer request state', () => {
     const ready = applyPreviewResult(s, 'r', ok('r'));
     expect(markCorrupt(ready, 'old')).toBe(ready);
     expect(markCorrupt(ready, 'r').phase).toMatchObject({ kind: 'error', code: 'PREVIEW_CORRUPT' });
+  });
+
+  it('the visible tile window stays small for a huge folder', () => {
+    const w = tileWindow({
+      count: 10_000,
+      scrollTop: 0,
+      viewport: 600,
+      columns: 5,
+      tile: TILE_PX.small,
+      overscanRows: 2,
+    });
+    expect(w.first).toBe(0);
+    expect(w.last).toBeLessThan(80);
+    expect(w.height).toBe(Math.ceil(10_000 / 5) * TILE_PX.small);
+    const mid = tileWindow({
+      count: 10_000,
+      scrollTop: 5_000,
+      viewport: 600,
+      columns: 5,
+      tile: TILE_PX.small,
+      overscanRows: 2,
+    });
+    expect(mid.last - mid.first).toBeLessThan(80);
+    expect(mid.first).toBeGreaterThan(0);
+    expect(
+      tileWindow({ count: 0, scrollTop: 0, viewport: 100, columns: 3, tile: 10, overscanRows: 1 })
+        .last,
+    ).toBe(-1);
+  });
+
+  it('thumbnail edges are the two preview sizes', () => {
+    expect(THUMBNAIL_MAX_EDGE.small).toBeLessThan(THUMBNAIL_MAX_EDGE.large);
+    expect(THUMBNAIL_MAX_EDGE.large).toBeLessThanOrEqual(512);
   });
 
   it('prev/next stay inside the folder', () => {

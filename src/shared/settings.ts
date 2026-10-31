@@ -7,6 +7,14 @@ export const SIDEBAR_MAX = 480;
 export const ThemeSchema = z.enum(['system', 'light', 'dark']);
 export type Theme = z.infer<typeof ThemeSchema>;
 
+/** Remote file listing. Missing on older settings files: those load as list. */
+export const BrowserViewSchema = z.enum(['list', 'preview']);
+export type BrowserView = z.infer<typeof BrowserViewSchema>;
+
+/** Thumbnail edge in Preview mode. Missing on older settings files: those load as small. */
+export const PreviewSizeSchema = z.enum(['small', 'large']);
+export type PreviewSize = z.infer<typeof PreviewSizeSchema>;
+
 export const WindowStateSchema = z
   .object({
     x: z.number().int().optional(),
@@ -25,6 +33,8 @@ export const SettingsSchema = z
     sidebarWidth: z.number().int().min(SIDEBAR_MIN).max(SIDEBAR_MAX),
     lastSelectedProfileId: z.uuid().nullable(),
     window: WindowStateSchema.nullable(),
+    browserView: BrowserViewSchema.default('list'),
+    previewSize: PreviewSizeSchema.default('small'),
   })
   .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -35,6 +45,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 260,
   lastSelectedProfileId: null,
   window: null,
+  browserView: 'list',
+  previewSize: 'small',
 };
 
 /** What the renderer may change. */
@@ -43,6 +55,8 @@ export const SettingsPatchSchema = z
     theme: ThemeSchema.optional(),
     sidebarWidth: z.number().int().min(SIDEBAR_MIN).max(SIDEBAR_MAX).optional(),
     lastSelectedProfileId: z.uuid().nullable().optional(),
+    browserView: BrowserViewSchema.optional(),
+    previewSize: PreviewSizeSchema.optional(),
   })
   .strict();
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;

@@ -10,6 +10,7 @@ import {
   filterEntries,
   formatModified,
   formatSize,
+  gridKeySelect,
   keySelect,
   moveHistory,
   pushHistory,
@@ -261,6 +262,23 @@ describe('selection', () => {
     expect(keySelect(s, list, 'PageDown', {}, 10).active).toBe(4);
     expect(keySelect(keySelect(s, list, 'End'), list, 'PageUp', {}, 2).active).toBe(2);
     expect(keySelect(emptySelection(), [], 'ArrowDown')).toEqual(emptySelection());
+  });
+
+  it('grid arrows move by column; left and right move by one', () => {
+    const tiles = ['a', 'b', 'c', 'd', 'e', 'f'];
+    let s = gridKeySelect(emptySelection(), tiles, 'ArrowRight', 3);
+    expect(s.active).toBe(0);
+    s = gridKeySelect(s, tiles, 'ArrowRight', 3);
+    expect([...s.selected]).toEqual(['b']);
+    s = gridKeySelect(s, tiles, 'ArrowDown', 3);
+    expect([...s.selected]).toEqual(['e']);
+    s = gridKeySelect(s, tiles, 'ArrowLeft', 3, { shift: true });
+    expect([...s.selected].sort()).toEqual(['d', 'e']);
+    s = gridKeySelect(s, tiles, 'Home', 3, { toggle: true });
+    expect(s.active).toBe(0);
+    expect(s.selected.size).toBe(2);
+    expect(gridKeySelect(s, tiles, 'End', 3).active).toBe(5);
+    expect(gridKeySelect(emptySelection(), [], 'ArrowDown', 4)).toEqual(emptySelection());
   });
 
   it('select all and reconcile after filtering', () => {

@@ -4,9 +4,26 @@
 // cap, and the renderer's request state (stale responses are ignored).
 import type { BrowseEntry } from './browse';
 import type { IpcResult } from './ipc-contract';
+import type { PreviewSize } from './settings';
 
 /** Hard cap on bytes read for one preview; larger files are offered for download. */
 export const PREVIEW_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Longest edge of a grid thumbnail, in pixels. Small is sharp on a ~112px
+ * tile at 1.5×; large is the same for a ~250px tile. The full preview dialog
+ * still loads the original (capped) file.
+ */
+export const THUMBNAIL_MAX_EDGE: Record<PreviewSize, number> = { small: 160, large: 320 };
+
+/** CSS tile size for the preview grid (image area plus the file name). */
+export const TILE_PX: Record<PreviewSize, number> = { small: 148, large: 292 };
+
+/** SVGs at or under this size are shown as-is in the grid; larger ones get an icon. */
+export const SVG_THUMB_MAX_BYTES = 512 * 1024;
+
+/** How many thumbnail reads may be in flight for one session. */
+export const THUMBNAIL_CONCURRENCY = 3;
 
 export const PREVIEW_EXTENSIONS = [
   'png',
@@ -178,6 +195,48 @@ export function applyPreviewResult(
       : state;
   if (r.error.code === 'CANCELLED') return state;
   return { ...state, phase: { kind: 'error', code: r.error.code, message: r.error.message } };
+}
+
+/**
+ * Indexes of the tiles that should be mounted for the current scroll position.
+ * Everything outside this window is not requested. `last` is -1 when empty.
+ */
+export function tileWindow(opts: {
+  count: number;
+  scrollTop: number;
+  viewport: number;
+  columns: number;
+  tile: number;
+  overscanRows: number;
+}): { first: number; last: number; height: number } {
+  const columns = Math.max(1, Math.floor(opts.columns));
+  const tile = Math.max(1, opts.tile);
+  if (opts.count <= 0) return { first: 0, last: -1, height: 0 };
+  const rows = Math.ceil(opts.count / columns);
+  const firstRow = Math.max(0, Math.floor(opts.scrollTop / tile) - opts.overscanRows);
+  const lastRow = Math.min(
+    rows - 1,
+    Math.ceil((opts.scrollTop + Math.max(0, opts.viewport)) / tile) - 1 + opts.overscanRows,
+  );
+  return {
+    first: Math.min(opts.count - 1, firstRow * columns),
+    last: Math.min(opts.count - 1, (lastRow + 1) * columns - 1),
+    height: rows * tile,
+  };
+}
+
+/** Grid thumbnail returned by main. `mime` null means "show the file icon". */
+export interface Thumbnail {
+  sessionId: string;
+  requestId: string;
+  path: string;
+  size: PreviewSize;
+  /**
+   * PNG when the image was downsized. The original mime when it was small
+   * enough to keep as-is (SVG, or a format the resizer cannot decode).
+   */
+  mime: PreviewMime | null;
+  bytes: Uint8Array<ArrayBuffer>;
 }
 
 /** The image did not decode in <img>: same request, error phase. */
