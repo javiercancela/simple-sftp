@@ -15,11 +15,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04 # Linux x64: .deb + .zip
-          # macos-14 (arm64) is retired 2026-11-02. During the 2026-11-01 brownout
-          # GitHub cancels the job in about a second with no steps:
-          # https://github.com/actions/runner-images/issues/13518
-          # macos-15 is the current arm64 image.
-          - os: macos-15 # macOS arm64: .dmg + .zip
+          # No macOS arm64 job. macos-14 is retired (brownout cancels it with no
+          # steps: actions/runner-images#13518). macos-15 arm64 was refused
+          # before any step: "recent account payments have failed or your
+          # spending limit needs to be increased." macos-latest is the same
+          # arm64 pool. Intel macOS still runs.
           - os: macos-15-intel # macOS x64: .dmg + .zip (macos-13 was retired Dec 2025; Intel runners end Aug 2027)
           - os: windows-latest # Windows x64: Squirrel installer
     runs-on: ${{ matrix.os }}

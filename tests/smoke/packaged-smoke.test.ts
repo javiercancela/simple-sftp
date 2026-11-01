@@ -70,13 +70,17 @@ function candidates(outName: string): Candidate[] {
     }
   }
   const pkgDir = join(ROOT_DIR, outName, `SimpleSFTP-${process.platform}-${process.arch}`);
+  // executableName is simple-sftp; some packager versions use the product name.
+  const macExe = ['simple-sftp', 'SimpleSFTP']
+    .map((name) => join(pkgDir, 'SimpleSFTP.app', 'Contents', 'MacOS', name))
+    .find((p) => existsSync(p));
   const exe =
     process.platform === 'darwin'
-      ? join(pkgDir, 'SimpleSFTP.app', 'Contents', 'MacOS', 'SimpleSFTP')
+      ? macExe
       : process.platform === 'win32'
         ? join(pkgDir, 'simple-sftp.exe')
         : join(pkgDir, 'simple-sftp');
-  if (existsSync(exe))
+  if (exe && existsSync(exe))
     list.push({ label: `packaged dir ${pkgDir.split(/[\\/]/).pop()}`, prepare: () => exe });
   return list;
 }
