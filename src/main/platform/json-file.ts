@@ -43,13 +43,33 @@ export async function writeJsonAtomic(file: string, value: unknown): Promise<voi
     throw err;
   }
   await fh.close();
-  try {
-    await rename(tmp, file);
-  } catch (err) {
-    await unlink(tmp).catch(() => undefined);
-    throw err;
-  }
+  await renameOver(tmp, file);
   await fsyncDir(dir).catch(() => undefined);
+}
+
+/**
+ * Windows often returns EPERM/EBUSY for a replace that is about to succeed
+ * (indexer or antivirus still has the destination open). The temp file is
+ * already complete and fsynced, so retrying the rename does not publish a
+ * partial file. Other platforms fail on the first error.
+ */
+async function renameOver(tmp: string, file: string): Promise<void> {
+  const attempts = process.platform === 'win32' ? 8 : 1;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await rename(tmp, file);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const transient =
+        process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY');
+      if (!transient || i === attempts - 1) {
+        await unlink(tmp).catch(() => undefined);
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, 20 * (i + 1)));
+    }
+  }
 }
 
 export class VersionedJsonFile<S extends z.ZodType> {
