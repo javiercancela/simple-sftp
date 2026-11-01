@@ -134,7 +134,12 @@ async function launch(): Promise<void> {
     executablePath: electronPath as unknown as string,
     args: [REPO],
     colorScheme: null,
-    env: { ...process.env, XDG_CONFIG_HOME: CONFIG_HOME, ELECTRON_ENABLE_LOGGING: '0' },
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: CONFIG_HOME,
+      SFTP_CLIENT_USER_DATA: USER_DATA,
+      ELECTRON_ENABLE_LOGGING: '0',
+    },
   });
   page = await app.firstWindow();
   await page.waitForSelector('.app', { timeout: 20_000 });
@@ -175,7 +180,10 @@ async function connect(profileName: string): Promise<void> {
 /** Select rows (click, then Ctrl+click) and press Download. */
 async function downloadSelected(names: string[]): Promise<void> {
   await fileRow(names[0]!).click();
-  for (const n of names.slice(1)) await fileRow(n).click({ modifiers: ['Control'] });
+  for (const n of names.slice(1))
+    await fileRow(n).click({
+      modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'],
+    });
   await page.getByTestId('download-button').click();
 }
 
@@ -273,14 +281,34 @@ describe.skipIf(!bin || !built)('Downloads end-to-end (real sshd, xvfb)', () => 
   });
 
   it('release menu: no reload or DevTools; Ctrl+R refreshes the folder without reloading', async () => {
-    expect(await app!.evaluate(({ Menu }) => Menu.getApplicationMenu() === null)).toBe(true);
+    const menuText = await app!.evaluate(({ Menu }) => {
+      const menu = Menu.getApplicationMenu();
+      if (!menu) return null;
+      const parts: string[] = [];
+      const walk = (items: Electron.MenuItem[]): void => {
+        for (const item of items) {
+          parts.push(`${item.role ?? ''} ${item.label}`.toLowerCase());
+          if (item.submenu) walk(item.submenu.items);
+        }
+      };
+      walk(menu.items);
+      return parts.join('\n');
+    });
+    // Windows and Linux have no menu bar. macOS keeps app/Edit/Window, without
+    // reload or DevTools (those would bypass the renderer's folder refresh).
+    if (process.platform === 'darwin') {
+      expect(menuText).toBeTruthy();
+      expect(menuText).not.toMatch(/reload|devtools/);
+    } else {
+      expect(menuText).toBeNull();
+    }
     await connect('Fixture server');
     // Queue panel is collapsed while empty.
     expect(await page.getByTestId('download-queue').getAttribute('class')).toBe('queue');
     await page.evaluate(() => ((window as unknown as { marker: number }).marker = 42));
     await writeFile(join(FILES, 'appeared.txt'), 'new');
     await fileRow('notes.txt').click();
-    await page.keyboard.press('Control+r');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+r' : 'Control+r');
     await fileRow('appeared.txt').waitFor({ timeout: 10_000 });
     expect(await page.evaluate(() => (window as unknown as { marker?: number }).marker)).toBe(42);
     await rm(join(FILES, 'appeared.txt'));

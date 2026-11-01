@@ -1,6 +1,7 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron';
 import started from 'electron-squirrel-startup';
 import { randomUUID } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ConnectionSnapshot } from '../shared/connection';
@@ -35,6 +36,17 @@ import {
   RENDERER_INDEX,
 } from './platform/window';
 import { ProfileStore } from './profiles/profile-store';
+
+// Tests isolate app data. Electron honours XDG_CONFIG_HOME only on Linux;
+// macOS would otherwise write to ~/Library/Application Support.
+const userDataOverride = process.env.SFTP_CLIENT_USER_DATA;
+if (userDataOverride) {
+  if (!path.isAbsolute(userDataOverride)) {
+    throw new Error('SFTP_CLIENT_USER_DATA must be an absolute path');
+  }
+  mkdirSync(userDataOverride, { recursive: true });
+  app.setPath('userData', userDataOverride);
+}
 
 // Windows Squirrel install/uninstall shortcut handling.
 if (started) app.quit();

@@ -99,7 +99,12 @@ async function launch(): Promise<void> {
     executablePath: electronPath as unknown as string,
     args: [REPO],
     colorScheme: null,
-    env: { ...process.env, XDG_CONFIG_HOME: CONFIG_HOME, ELECTRON_ENABLE_LOGGING: '0' },
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: CONFIG_HOME,
+      SFTP_CLIENT_USER_DATA: USER_DATA,
+      ELECTRON_ENABLE_LOGGING: '0',
+    },
   });
   page = await app.firstWindow();
   await page.waitForSelector('.app', { timeout: 20_000 });
@@ -391,7 +396,9 @@ describe.skipIf(!bin || !built)('Browsing end-to-end (real sshd, xvfb)', () => {
     expect(await itemCount()).toMatch(/selected/);
     const rangeCount = await page.locator('[data-testid="file-row"][aria-selected="true"]').count();
     expect(rangeCount).toBeGreaterThan(2);
-    await row('nested').click({ modifiers: ['Control'] });
+    await row('nested').click({
+      modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'],
+    });
     expect(await page.locator('[data-testid="file-row"][aria-selected="true"]').count()).toBe(
       rangeCount + 1,
     );
@@ -401,7 +408,7 @@ describe.skipIf(!bin || !built)('Browsing end-to-end (real sshd, xvfb)', () => {
     await page.keyboard.press('Shift+ArrowDown');
     await page.keyboard.press('Shift+ArrowDown');
     expect(await page.locator('[data-testid="file-row"][aria-selected="true"]').count()).toBe(3);
-    await page.keyboard.press('Control+a');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+a' : 'Control+a');
     expect(await itemCount()).toMatch(new RegExp(`· ${(await rowNames()).length} selected`));
     await page.keyboard.press('Escape');
     expect(await itemCount()).not.toMatch(/selected/);

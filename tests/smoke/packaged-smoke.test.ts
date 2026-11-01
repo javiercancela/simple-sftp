@@ -326,7 +326,10 @@ describe.skipIf(releaseApps.length === 0)('release artifacts: smoke hook compile
       const { output } = await runApp(
         exe,
         configPath,
-        { XDG_CONFIG_HOME: join(outDir, 'config') },
+        {
+          XDG_CONFIG_HOME: join(outDir, 'config'),
+          SFTP_CLIENT_USER_DATA: join(outDir, 'config', 'SimpleSFTP'),
+        },
         [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'],
         async () => {
           let browser;

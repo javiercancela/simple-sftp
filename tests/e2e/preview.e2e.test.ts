@@ -292,6 +292,7 @@ describe.skipIf(!bin || !built)('Image preview end-to-end (real sshd, xvfb)', ()
       env: {
         ...process.env,
         XDG_CONFIG_HOME: CONFIG_HOME,
+        SFTP_CLIENT_USER_DATA: USER_DATA,
         TMPDIR: APP_TMP,
         ELECTRON_ENABLE_LOGGING: '0',
       },
