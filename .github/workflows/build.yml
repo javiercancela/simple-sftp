@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     strategy:
+      # A failed or cancelled OS must not cancel the others. macos-14 in
+      # actions run 41236013385 was cancelled with no runner and no steps
+      # while this was already false; leave it false so that stays true.
       fail-fast: false
       matrix:
         include:
@@ -36,6 +39,9 @@ jobs:
       - name: Unit tests only (no unprivileged sshd fixture on Windows yet)
         if: runner.os == 'Windows'
         run: npm run test:unit
+      - name: OpenSSH integration, Electron e2e, and packaged smoke are skipped on Windows
+        if: runner.os == 'Windows'
+        run: echo "Skipped on Windows. This runner has no unprivileged sshd fixture, so real-sshd integration, Electron e2e, and packaged smoke do not run. Unit tests, lint, typecheck, and the installer build still run."
       - run: npm run make
       - name: Electron UI end-to-end (real sshd)
         if: runner.os != 'Windows'

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach } from 'vitest';
@@ -10,7 +10,9 @@ export function useTempDir(): () => Promise<string> {
     await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
   });
   return async () => {
-    const d = await mkdtemp(join(tmpdir(), 'sftp-unit-'));
+    // Canonicalize. On macOS os.tmpdir() is /var/folders, a symlink to
+    // /private/var/folders, and approveDirectory() stores the real path.
+    const d = await realpath(await mkdtemp(join(tmpdir(), 'sftp-unit-')));
     dirs.push(d);
     return d;
   };

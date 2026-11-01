@@ -1,0 +1,11 @@
+# oxfmt --check expects LF. Git for Windows defaults to core.autocrlf=true,
+# which checked the tree out as CRLF and failed lint on every text file
+# (windows-latest, actions run 41236013385).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary

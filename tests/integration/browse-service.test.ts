@@ -198,7 +198,12 @@ describe.skipIf(!bin)('BrowseService against real sshd', () => {
     const ms = performance.now() - t0;
     console.log(`[browse] 10,000-entry listing over SFTP: ${ms.toFixed(0)} ms`);
     expect(r.entries).toHaveLength(10_000);
-    expect(ms).toBeLessThan(10_000);
+    // Linux localhost stays under 10s, which is the budget this guard was
+    // written for. GitHub's macos-15-intel runner took 18.9s for the same
+    // listing while a parallel suite was writing a 4 GiB file (actions run
+    // 41236013385). 30s still fails a stall on that hardware.
+    const budgetMs = process.platform === 'linux' ? 10_000 : 30_000;
+    expect(ms, `listing took ${ms.toFixed(0)} ms`).toBeLessThan(budgetMs);
   });
 
   it('a superseded request never resolves with data; the newest one does', async () => {

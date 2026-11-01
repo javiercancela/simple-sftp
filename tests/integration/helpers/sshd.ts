@@ -1,21 +1,30 @@
 // Real OpenSSH server fixture. Runs sshd unprivileged, bound to 127.0.0.1
 // only, with throwaway keys generated under tests/.tmp (gitignored).
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 export interface SshdBinary {
   sshd: string;
+  /** Directory containing sshd-session, when this OpenSSH split the binaries. */
   libexecDir: string | undefined;
+  /** External sftp-server, when one exists. Undefined means "not on this host". */
+  sftpServer: string | undefined;
   env: NodeJS.ProcessEnv;
 }
 
 /**
- * Locate sshd. Order: $SFTP_TEST_SSHD, /usr/sbin/sshd.
+ * Locate sshd. Order: $SFTP_TEST_SSHD, /usr/sbin/sshd, /usr/local/sbin/sshd,
+ * the binary extracted by scripts/fetch-test-sshd-debian.sh.
  * $SFTP_TEST_SSHD_LD_LIBRARY_PATH is added to the child environment when set
  * (for an sshd extracted from a .deb rather than installed).
+ *
+ * sftp-server is located separately. OpenSSH < 9.8 has no sshd-session, so
+ * tying the lookup to that binary misses Debian/Ubuntu's
+ * /usr/lib/openssh/sftp-server.
  */
 export function findSshd(): SshdBinary | undefined {
   const repoTools = resolve(__dirname, '..', '..', '..', '.tools', 'openssh', 'root');
@@ -27,10 +36,11 @@ export function findSshd(): SshdBinary | undefined {
   ];
   const sshd = candidates.find((c): c is string => !!c && existsSync(c));
   if (!sshd) return undefined;
+  const resolved = resolve(sshd);
   const libexecCandidates = [
     process.env.SFTP_TEST_SSHD_LIBEXEC,
-    join(dirname(sshd), '..', 'lib', 'openssh'),
-    join(dirname(sshd), '..', 'libexec'),
+    join(dirname(resolved), '..', 'lib', 'openssh'),
+    join(dirname(resolved), '..', 'libexec'),
   ];
   const libexecDir = libexecCandidates.find(
     (c): c is string => !!c && existsSync(join(c, 'sshd-session')),
@@ -38,10 +48,126 @@ export function findSshd(): SshdBinary | undefined {
   const env: NodeJS.ProcessEnv = { PATH: process.env.PATH ?? '/usr/bin:/bin' };
   if (process.env.SFTP_TEST_SSHD_LD_LIBRARY_PATH) {
     env.LD_LIBRARY_PATH = process.env.SFTP_TEST_SSHD_LD_LIBRARY_PATH;
-  } else if (sshd.startsWith(repoTools)) {
+  } else if (resolved.startsWith(repoTools)) {
     env.LD_LIBRARY_PATH = join(repoTools, 'usr', 'lib', 'x86_64-linux-gnu');
   }
-  return { sshd: resolve(sshd), libexecDir: libexecDir && resolve(libexecDir), env };
+  const resolvedLibexec = libexecDir && resolve(libexecDir);
+  return {
+    sshd: resolved,
+    libexecDir: resolvedLibexec,
+    sftpServer: findSftpServer(resolved, resolvedLibexec, env),
+    env,
+  };
+}
+
+/** argv0 is the sftp-server binary, whatever directory it lives in. */
+export function isSftpServerCommand(command: string): boolean {
+  const argv0 = command.trim().split(/\s+/)[0] ?? '';
+  return argv0.split(/[/\\]/).pop() === 'sftp-server';
+}
+
+/**
+ * First `subsystem sftp <path>` from `sshd -T` output.
+ * `internal-sftp` is not a binary and yields undefined.
+ */
+export function sftpServerPathFromSshdT(text: string): string | undefined {
+  for (const line of text.split('\n')) {
+    const match = /^subsystem\s+sftp\s+(\S+)/i.exec(line.trim());
+    if (!match) continue;
+    const token = match[1] ?? '';
+    if (token === 'internal-sftp' || token.startsWith('internal-sftp')) return undefined;
+    return token;
+  }
+  return undefined;
+}
+
+/** True when sshd's stderr says it does not recognise PerSourcePenalties. */
+export function sshdStderrRejectsPerSourcePenalties(stderr: string): boolean {
+  return (
+    /bad configuration option:\s*persourcepenalties/i.test(stderr) ||
+    /unsupported option:?\s*["']?persourcepenalties/i.test(stderr)
+  );
+}
+
+const penaltySupport = new Map<string, boolean>();
+
+/**
+ * OpenSSH >= 9.8 accepts PerSourcePenalties. Older sshd (Ubuntu 24.04's 9.6)
+ * rejects the keyword, so the fixture must not emit it.
+ * Probe with `sshd -t` rather than parsing the version string: vendors backport.
+ */
+export function sshdSupportsPerSourcePenalties(bin: SshdBinary): boolean {
+  const cached = penaltySupport.get(bin.sshd);
+  if (cached !== undefined) return cached;
+  const dir = mkdtempSync(join(tmpdir(), 'sshd-probe-'));
+  const cfg = join(dir, 'sshd_config');
+  let supported = false;
+  try {
+    writeFileSync(cfg, 'PerSourcePenalties no\n', { mode: 0o600 });
+    try {
+      execFileSync(bin.sshd, ['-t', '-f', cfg], {
+        env: bin.env,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      supported = true;
+    } catch (e) {
+      supported = !sshdStderrRejectsPerSourcePenalties(execOutput(e));
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  penaltySupport.set(bin.sshd, supported);
+  return supported;
+}
+
+function findSftpServer(
+  sshd: string,
+  libexecDir: string | undefined,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  const beside = dirname(sshd);
+  const candidates = [
+    process.env.SFTP_TEST_SFTP_SERVER,
+    libexecDir && join(libexecDir, 'sftp-server'),
+    join(beside, 'sftp-server'),
+    join(beside, '..', 'lib', 'openssh', 'sftp-server'), // Debian, Ubuntu
+    join(beside, '..', 'libexec', 'openssh', 'sftp-server'), // Fedora, RHEL
+    join(beside, '..', 'libexec', 'sftp-server'), // macOS, some BSDs
+    '/usr/lib/openssh/sftp-server',
+    '/usr/libexec/openssh/sftp-server',
+    '/usr/libexec/sftp-server',
+    '/usr/local/libexec/sftp-server',
+    '/usr/local/libexec/openssh/sftp-server',
+    '/opt/homebrew/libexec/sftp-server',
+    '/opt/homebrew/libexec/openssh/sftp-server',
+    '/opt/homebrew/opt/openssh/libexec/sftp-server',
+    '/usr/local/opt/openssh/libexec/sftp-server',
+  ];
+  const found = candidates.find((c): c is string => !!c && existsSync(c));
+  if (found) return resolve(found);
+  const fromConfig = sftpServerPathFromSshdT(sshdEffectiveConfig(sshd, env));
+  if (fromConfig && existsSync(fromConfig)) return resolve(fromConfig);
+  return undefined;
+}
+
+function sshdEffectiveConfig(sshd: string, env: NodeJS.ProcessEnv): string {
+  try {
+    return execFileSync(sshd, ['-T'], {
+      env,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (e) {
+    return execOutput(e);
+  }
+}
+
+function execOutput(e: unknown): string {
+  if (!e || typeof e !== 'object') return '';
+  const err = e as { stdout?: unknown; stderr?: unknown; message?: string };
+  const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+  return `${text(err.stdout)}\n${text(err.stderr)}\n${err.message ?? ''}`;
 }
 
 export function freePort(): Promise<number> {
@@ -115,20 +241,37 @@ export class SshdInstance {
       'X11Forwarding no',
       'PermitTTY no',
       `LogLevel ${c.logLevel ?? 'DEBUG3'}`,
-      // OpenSSH >= 9.8 penalizes sources after failed auths; tests fail on purpose.
-      `PerSourcePenalties ${c.perSourcePenalties ?? 'no'}`,
     ];
-    if (c.sftpServer !== 'none') lines.push('Subsystem sftp internal-sftp');
+    // OpenSSH >= 9.8 penalizes sources after failed auths and the option is on
+    // by default. Tests fail auth on purpose, so disable it when the binary
+    // accepts the keyword. Older sshd has no penalties; emitting the keyword
+    // makes `sshd -t` fail (Ubuntu 24.04 ships 9.6).
+    const penalties = c.perSourcePenalties ?? 'no';
+    if (sshdSupportsPerSourcePenalties(this.bin)) {
+      lines.push(`PerSourcePenalties ${penalties}`);
+    } else if (c.perSourcePenalties !== undefined && c.perSourcePenalties !== 'no') {
+      throw new Error(
+        'This OpenSSH does not support PerSourcePenalties (sshd -t rejected the option). Refusing to start a fixture that would not enforce the requested penalty.',
+      );
+    }
     if (c.sftpServer === 'none') {
       // No subsystem and no forced command: the sftp request is refused.
     } else if (c.sftpServer === 'external') {
-      const server = this.bin.libexecDir && join(this.bin.libexecDir, 'sftp-server');
-      if (!server || !existsSync(server)) throw new Error('sftp-server binary not found');
+      const server = this.bin.sftpServer;
+      if (!server)
+        throw new Error(
+          'sftp-server binary not found (set SFTP_TEST_SFTP_SERVER, or install OpenSSH so a common path or `sshd -T` subsystem line points at it)',
+        );
       const ld = this.bin.env.LD_LIBRARY_PATH
         ? `env LD_LIBRARY_PATH=${this.bin.env.LD_LIBRARY_PATH} `
         : '';
+      // Subsystem and ForceCommand both name the external binary. Some sshd
+      // builds apply only one of them to an sftp subsystem request; either way
+      // the process is sftp-server, which tests can signal.
+      lines.push(`Subsystem sftp ${server} -d ${c.sftpRoot}`);
       lines.push(`ForceCommand ${ld}${server} -d ${c.sftpRoot}`);
     } else {
+      lines.push('Subsystem sftp internal-sftp');
       lines.push(`ForceCommand internal-sftp -d ${c.sftpRoot}`);
     }
     if (this.bin.libexecDir) {

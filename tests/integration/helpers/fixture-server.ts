@@ -9,7 +9,7 @@ import { TrustStore } from '../../../src/main/connections/trust-store';
 import type { ConnectionSnapshot } from '../../../src/shared/connection';
 import type { Profile } from '../../../src/shared/profiles';
 import { hostFingerprint, keygen, pub, signCert } from './keys';
-import { SshdInstance, freePort, type SshdBinary } from './sshd';
+import { SshdInstance, freePort, isSftpServerCommand, type SshdBinary } from './sshd';
 
 const PRINCIPAL = 'sftp-test-principal';
 
@@ -22,6 +22,8 @@ export interface FixtureServer {
   connect(): Promise<string>;
   /** sshd-session / sftp-server processes serving our connection. */
   sessionPids(): number[];
+  /** Command lines of processes descended from the listener (for failure logs). */
+  sessionCommands(): string[];
   sftpServerPids(): number[];
   stop(): Promise<void>;
 }
@@ -55,6 +57,25 @@ export function signalAll(pids: number[], sig: NodeJS.Signals): void {
       /* already gone */
     }
   }
+}
+
+/** sftp-server processes whose command line names this fixture's root. */
+function sftpServersByArgs(root: string): number[] {
+  let out: string;
+  try {
+    // -ww: don't truncate the command at the terminal width (the root path is the id).
+    out = execFileSync('ps', ['-eww', '-o', 'pid=,args='], { encoding: 'utf8' });
+  } catch {
+    return [];
+  }
+  const pids: number[] = [];
+  for (const line of out.split('\n')) {
+    const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+    if (!match) continue;
+    const command = match[2] ?? '';
+    if (isSftpServerCommand(command) && command.includes(root)) pids.push(Number(match[1]));
+  }
+  return pids;
 }
 
 export async function startFixtureServer(opts: {
@@ -142,10 +163,17 @@ export async function startFixtureServer(opts: {
     snapshot: () => snap ?? mgr.getSnapshot(),
     connect,
     sessionPids: () => kids().map((k) => k.pid),
-    sftpServerPids: () =>
-      kids()
-        .filter((k) => k.comm.startsWith('sftp-server'))
-        .map((k) => k.pid),
+    sessionCommands: () => kids().map((k) => k.comm),
+    sftpServerPids: () => {
+      // `ps -o comm` is the short name on Linux and often the full path on
+      // macOS, so match the basename. If sshd reparents the subsystem away
+      // from the listener, the `-d <root>` argument is unique to this fixture.
+      const fromTree = kids()
+        .filter((k) => isSftpServerCommand(k.comm))
+        .map((k) => k.pid);
+      if (fromTree.length > 0) return fromTree;
+      return sftpServersByArgs(opts.sftpRoot);
+    },
     stop: async () => {
       await mgr.shutdown();
       await server.stop();
