@@ -312,6 +312,9 @@ describe.skipIf(!bin || !built)('Downloads end-to-end (real sshd, xvfb)', () => 
     await fileRow('appeared.txt').waitFor({ timeout: 10_000 });
     expect(await page.evaluate(() => (window as unknown as { marker?: number }).marker)).toBe(42);
     await rm(join(FILES, 'appeared.txt'));
+    // F5 is handled by the file list. After the row appears, focus may have
+    // left that list, and the key would not refresh.
+    await page.getByTestId('file-table').focus();
     await page.keyboard.press('F5');
     await page.waitForFunction(
       () => !document.querySelector('[data-testid="file-row"][data-name="appeared.txt"]'),
