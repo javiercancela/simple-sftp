@@ -1,6 +1,7 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron';
 import started from 'electron-squirrel-startup';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ConnectionSnapshot } from '../shared/connection';
 import type { DownloadsSnapshot } from '../shared/downloads';
@@ -12,6 +13,7 @@ import {
 } from '../shared/ipc-contract';
 import { BrowseService } from './connections/browse-service';
 import { PreviewService } from './connections/preview-service';
+import { ThumbnailService } from './connections/thumbnail-service';
 import { ConnectionManager, StaleRequestError } from './connections/connection-manager';
 import { TrustStore } from './connections/trust-store';
 import { DownloadService } from './downloads/download-service';
@@ -22,8 +24,11 @@ import { createIpcRouter } from './ipc/router';
 import { chooseDownloadFolder, chooseFile, chooseSavePath } from './platform/dialogs';
 import type { Recovery } from './platform/json-file';
 import { installAppMenu } from './platform/menu';
+import { PreviewCache } from './platform/preview-cache';
 import { SettingsStore } from './platform/settings-store';
+import { encodeThumbnail } from './platform/thumbnail-encode';
 import {
+  applyDockIcon,
   captureWindowState,
   createMainWindow,
   hardenWebContents,
@@ -89,6 +94,17 @@ async function startApp(): Promise<void> {
 
   const browse = new BrowseService({ getSession: (id) => connections.getSession(id) });
   const preview = new PreviewService({ getSession: (id) => connections.getSession(id) });
+  const thumbnails = new ThumbnailService({
+    getSession: (id) => connections.getSession(id),
+    getIdentity: (id) => {
+      const session = connections.getSession(id);
+      const snap = connections.getSnapshot();
+      if (!session || snap.sessionId !== id || !snap.profileId) return null;
+      return { profileId: snap.profileId, hostFingerprint: session.hostKey.fingerprintSha256 };
+    },
+    cache: new PreviewCache(path.join(dir, 'preview-cache')),
+    encode: encodeThumbnail,
+  });
 
   downloads = new DownloadService({
     connection: () => {
@@ -166,6 +182,7 @@ async function startApp(): Promise<void> {
     connections,
     browse,
     preview,
+    thumbnails,
     downloads: dl,
     resolveQuit,
     notices,
@@ -198,6 +215,7 @@ async function startApp(): Promise<void> {
     return;
   }
 
+  applyDockIcon();
   mainWindow = createMainWindow({ show: true, state: settings.get().window });
   // Persist geometry before the window goes away (atomic write must finish).
   let geometrySaved = false;
@@ -222,13 +240,19 @@ async function startApp(): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  // Finish the SSH disconnect before the process exits. Otherwise the server
+  // sees a dropped socket instead of a disconnect.
+  let shutdownStarted = false;
   app.on('before-quit', (event) => {
     if (mustAsk()) {
       event.preventDefault();
       askQuit();
       return;
     }
-    void connections.shutdown();
+    if (shutdownStarted) return;
+    event.preventDefault();
+    shutdownStarted = true;
+    void connections.shutdown().finally(() => app.quit());
   });
 }
 

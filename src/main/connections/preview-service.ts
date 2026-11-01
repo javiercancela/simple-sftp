@@ -25,11 +25,67 @@ export interface PreviewDeps {
 
 const superseded = (): TransportError =>
   new TransportError('CANCELLED', 'This preview was cancelled or replaced by a newer one.');
-const tooLarge = (max: number): TransportError =>
+export const previewTooLarge = (max: number): TransportError =>
   new TransportError(
     'PREVIEW_TOO_LARGE',
     `This image is too large to preview (the limit is ${formatSize(max)}). Download it instead.`,
   );
+
+export function classifyPreviewError(err: unknown): TransportError {
+  if (isTransportError(err)) return err;
+  const code = (err as { code?: unknown })?.code;
+  // SSH_FX_NO_SUCH_FILE = 2, SSH_FX_PERMISSION_DENIED = 3
+  if (code === 2) return new TransportError('REMOTE_NOT_FOUND', 'The remote path does not exist.');
+  if (code === 3)
+    return new TransportError('REMOTE_PERMISSION_DENIED', 'Permission denied on the server.');
+  return new TransportError('REMOTE_ERROR', 'Could not read this file.');
+}
+
+/**
+ * Reads a remote file, failing as soon as it passes `max` (the file may grow
+ * after stat). `track` receives the stream so the caller can destroy it.
+ * Destroying the stream, or the stream closing early, rejects with CANCELLED.
+ */
+export function readCapped(
+  session: SftpSession,
+  path: string,
+  max: number,
+  track: (s: Readable) => void,
+): Promise<Uint8Array<ArrayBuffer>> {
+  return new Promise((resolve, reject) => {
+    const s = session.createReadStream(path);
+    track(s);
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let done = false;
+    const fail = (e: unknown): void => {
+      if (done) return;
+      done = true;
+      s.destroy();
+      reject(e);
+    };
+    s.on('data', (c: Buffer) => {
+      total += c.length;
+      if (total > max) return fail(previewTooLarge(max));
+      chunks.push(c);
+    });
+    s.on('error', fail);
+    s.on('end', () => {
+      if (done) return;
+      done = true;
+      // A dedicated ArrayBuffer: a pooled Buffer view would send unrelated
+      // memory with the structured clone.
+      const out = new Uint8Array(total);
+      let at = 0;
+      for (const c of chunks) {
+        out.set(c, at);
+        at += c.length;
+      }
+      resolve(out);
+    });
+    s.on('close', () => fail(superseded()));
+  });
+}
 
 interface Active {
   requestId: string;
@@ -78,10 +134,10 @@ export class PreviewService {
           'PREVIEW_NOT_A_FILE',
           'Only regular files can be previewed (not folders or links).',
         );
-      if ((st.size ?? 0) > this.max) throw tooLarge(this.max);
+      if ((st.size ?? 0) > this.max) throw previewTooLarge(this.max);
       await this.deps.afterStat?.(path);
       if (!live()) throw superseded();
-      const bytes = await this.read(session, path, (s) => {
+      const bytes = await readCapped(session, path, this.max, (s) => {
         stream = s;
       });
       if (!live()) throw superseded();
@@ -99,7 +155,7 @@ export class PreviewService {
           'DISCONNECTED',
           'The connection closed while loading the preview.',
         );
-      throw classify(err);
+      throw classifyPreviewError(err);
     } finally {
       offClose();
       if (this.active.get(sessionId)?.requestId === requestId) this.active.delete(sessionId);
@@ -113,56 +169,4 @@ export class PreviewService {
     this.active.delete(sessionId);
     return true;
   }
-
-  /** Reads the whole file, failing as soon as it passes the cap (it may grow). */
-  private read(
-    session: SftpSession,
-    path: string,
-    track: (s: Readable) => void,
-  ): Promise<Uint8Array<ArrayBuffer>> {
-    const max = this.max;
-    return new Promise((resolve, reject) => {
-      const s = session.createReadStream(path);
-      track(s);
-      const chunks: Buffer[] = [];
-      let total = 0;
-      let done = false;
-      const fail = (e: unknown): void => {
-        if (done) return;
-        done = true;
-        s.destroy();
-        reject(e);
-      };
-      s.on('data', (c: Buffer) => {
-        total += c.length;
-        if (total > max) return fail(tooLarge(max));
-        chunks.push(c);
-      });
-      s.on('error', fail);
-      s.on('end', () => {
-        if (done) return;
-        done = true;
-        // A dedicated ArrayBuffer: a pooled Buffer view would send unrelated
-        // memory with the structured clone.
-        const out = new Uint8Array(total);
-        let at = 0;
-        for (const c of chunks) {
-          out.set(c, at);
-          at += c.length;
-        }
-        resolve(out);
-      });
-      s.on('close', () => fail(superseded()));
-    });
-  }
-}
-
-function classify(err: unknown): TransportError {
-  if (isTransportError(err)) return err;
-  const code = (err as { code?: unknown })?.code;
-  // SSH_FX_NO_SUCH_FILE = 2, SSH_FX_PERMISSION_DENIED = 3
-  if (code === 2) return new TransportError('REMOTE_NOT_FOUND', 'The remote path does not exist.');
-  if (code === 3)
-    return new TransportError('REMOTE_PERMISSION_DENIED', 'Permission denied on the server.');
-  return new TransportError('REMOTE_ERROR', 'Could not read this file.');
 }

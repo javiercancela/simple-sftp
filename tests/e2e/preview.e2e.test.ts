@@ -321,7 +321,18 @@ describe.skipIf(!bin || !built)('Image preview end-to-end (real sshd, xvfb)', ()
     await new Promise<void>((r) => (http ? http.close(() => r()) : r()));
     await chmod(join(TMP, 'sftp-root', 'denied.png'), 0o644).catch(() => undefined);
     if (APP_TMP) await rm(APP_TMP, { recursive: true, force: true });
-    if (!process.env.KEEP_TEST_TMP) await rm(TMP, { recursive: true, force: true });
+    // Chromium can create a file while the tree is being removed.
+    if (!process.env.KEEP_TEST_TMP) {
+      for (let i = 0; i < 5; i++) {
+        try {
+          await rm(TMP, { recursive: true, force: true });
+          break;
+        } catch (err) {
+          if (i === 4 || (err as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw err;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
+    }
   });
 
   it('CSP: blob: images load; data: and remote images are blocked', async () => {

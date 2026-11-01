@@ -320,6 +320,10 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     await waitStatus('Connected');
     const sessions = serverSessions(certServer);
     expect(sessions.length).toBeGreaterThan(0);
+    // OpenSSH at DEBUG3 is still writing post-auth lines when the UI is already
+    // connected. Quitting in that window makes it log a broken pipe instead of
+    // the client's disconnect.
+    await page.waitForTimeout(400);
     certServer.clearLog();
     const { tree, ms } = await quitApp(() =>
       app!.evaluate(({ app: a }) => a.quit()).catch(() => undefined),

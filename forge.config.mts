@@ -34,8 +34,11 @@ const config: ForgeConfig = {
     name: 'SimpleSFTP',
     executableName: 'simple-sftp',
     appBundleId: 'dev.javiercancela.simplesftp',
+    // resources/icons/icon.{icns,ico,png} — no extension; packager picks the OS file.
+    icon: 'resources/icons/icon',
     // Licence notices for bundled dependencies (generated; see scripts/).
-    extraResource: ['THIRD_PARTY_NOTICES.md'],
+    // icon.png is the BrowserWindow / Linux icon (basename lands in Resources).
+    extraResource: ['THIRD_PARTY_NOTICES.md', 'resources/icons/icon.png'],
   },
   rebuildConfig: {},
   hooks: {
@@ -58,6 +61,7 @@ const config: ForgeConfig = {
         productName: 'SimpleSFTP',
         bin: 'simple-sftp',
         categories: ['Network', 'Utility'],
+        icon: 'resources/icons/icon.png',
       },
     }),
   ],

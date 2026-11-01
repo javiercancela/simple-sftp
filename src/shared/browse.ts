@@ -189,6 +189,7 @@ export function clickSelect(
 }
 
 export type NavKey = 'ArrowUp' | 'ArrowDown' | 'Home' | 'End' | 'PageUp' | 'PageDown';
+export type GridNavKey = NavKey | 'ArrowLeft' | 'ArrowRight';
 
 /** Standard list keyboard behaviour; `toggle` moves the cursor without selecting. */
 export function keySelect(
@@ -220,6 +221,53 @@ export function keySelect(
                 : cur + pageSize,
     ),
   );
+  if (m.shift) {
+    const anchor = sel.anchor ?? (cur < 0 ? target : cur);
+    return { selected: range(names, anchor, target), active: target, anchor };
+  }
+  if (m.toggle) return { ...sel, active: target };
+  return { selected: new Set([names[target]!]), active: target, anchor: target };
+}
+
+/**
+ * Keyboard cursor for the preview grid. Left/right move by one tile, up/down
+ * by a row (`columns`). Same shift and toggle rules as the list.
+ */
+export function gridKeySelect(
+  sel: Selection,
+  names: readonly string[],
+  key: GridNavKey,
+  columns: number,
+  m: Modifiers = {},
+  pageRows = 3,
+): Selection {
+  if (names.length === 0) return sel;
+  const cols = Math.max(1, Math.floor(columns));
+  const last = names.length - 1;
+  const cur = sel.active ?? -1;
+  const raw =
+    key === 'ArrowLeft'
+      ? cur < 0
+        ? 0
+        : cur - 1
+      : key === 'ArrowRight'
+        ? cur + 1
+        : key === 'ArrowUp'
+          ? cur < 0
+            ? 0
+            : cur - cols
+          : key === 'ArrowDown'
+            ? cur < 0
+              ? 0
+              : cur + cols
+            : key === 'Home'
+              ? 0
+              : key === 'End'
+                ? last
+                : key === 'PageUp'
+                  ? cur - pageRows * cols
+                  : cur + pageRows * cols;
+  const target = Math.max(0, Math.min(last, raw));
   if (m.shift) {
     const anchor = sel.anchor ?? (cur < 0 ? target : cur);
     return { selected: range(names, anchor, target), active: target, anchor };

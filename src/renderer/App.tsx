@@ -306,6 +306,10 @@ export function App(): React.JSX.Element {
           ) : snap.state === 'connected' && snap.sessionId ? (
             <Browser
               key={snap.sessionId}
+              viewMode={settings.browserView}
+              previewSize={settings.previewSize}
+              onViewMode={(browserView) => void updateSettings({ browserView })}
+              onPreviewSize={(previewSize) => void updateSettings({ previewSize })}
               onDownload={(paths) => void startDownload(snap.sessionId!, paths)}
               session={{
                 sessionId: snap.sessionId,

@@ -70,6 +70,13 @@ const bridge: SftpClientBridge = {
     previewImage: (sessionId, requestId, path) =>
       inv(IPC.remotePreviewImage, { sessionId, requestId, path }),
     cancelPreview: (sessionId, requestId) => inv(IPC.remoteCancelPreview, { sessionId, requestId }),
+    thumbnail: (sessionId, requestId, path, size) =>
+      inv(IPC.remoteThumbnail, { sessionId, requestId, path, size }),
+    cancelThumbnail: (sessionId, requestId) =>
+      inv(IPC.remoteCancelThumbnail, { sessionId, requestId }),
+  },
+  previews: {
+    clearCache: () => inv(IPC.previewsClearCache),
   },
   downloads: {
     list: () => inv(IPC.downloadsList),

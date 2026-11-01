@@ -1,12 +1,12 @@
 // IPC channel names, payload schemas and the typed bridge. Pure.
 import { z } from 'zod';
 import type { Listing } from './browse';
-import type { ImagePreview } from './preview';
+import type { ImagePreview, Thumbnail } from './preview';
 import type { CollisionChoice, DownloadsSnapshot, EnqueueResult, PlanDecision } from './downloads';
 import { MAX_REMOTE_PATH } from './remote-path';
 import type { ConnectionSnapshot } from './connection';
 import type { Profile } from './profiles';
-import type { Settings, SettingsPatch } from './settings';
+import { PreviewSizeSchema, type Settings, type SettingsPatch } from './settings';
 import type { TrustedHost } from './trust';
 
 /** Every invoke channel. Anything else is rejected by main. */
@@ -35,6 +35,9 @@ export const IPC = {
   remoteCancel: 'remote.cancel',
   remotePreviewImage: 'remote.previewImage',
   remoteCancelPreview: 'remote.cancelPreview',
+  remoteThumbnail: 'remote.thumbnail',
+  remoteCancelThumbnail: 'remote.cancelThumbnail',
+  previewsClearCache: 'previews.clearCache',
   downloadsList: 'downloads.list',
   downloadsEnqueue: 'downloads.chooseDestinationAndEnqueue',
   downloadsResolvePlan: 'downloads.resolvePlan',
@@ -113,6 +116,16 @@ export const PayloadSchemas = {
     .object({ sessionId: Uuid, requestId: Uuid, path: RemotePath })
     .strict(),
   [IPC.remoteCancelPreview]: z.object({ sessionId: Uuid, requestId: Uuid }).strict(),
+  [IPC.remoteThumbnail]: z
+    .object({
+      sessionId: Uuid,
+      requestId: Uuid,
+      path: RemotePath,
+      size: PreviewSizeSchema,
+    })
+    .strict(),
+  [IPC.remoteCancelThumbnail]: z.object({ sessionId: Uuid, requestId: Uuid }).strict(),
+  [IPC.previewsClearCache]: Empty,
   [IPC.downloadsList]: Empty,
   // Remote paths only: the local destination always comes from a native dialog in main.
   [IPC.downloadsEnqueue]: z
@@ -261,7 +274,7 @@ export interface SftpClientBridge {
     /**
      * Version 2, outside SPEC.md: the one deliberate exception to spec 7.2.
      * Returns the bytes of a remote image (capped, magic-byte checked) for an
-     * in-memory preview. Nothing is written to disk.
+     * in-memory preview. The full image is not written to disk.
      */
     previewImage(
       sessionId: string,
@@ -269,6 +282,22 @@ export interface SftpClientBridge {
       path: string,
     ): Promise<IpcResult<ImagePreview>>;
     cancelPreview(sessionId: string, requestId: string): Promise<IpcResult<null>>;
+    /**
+     * Grid thumbnail. Same cap and magic-byte check as previewImage, but the
+     * bytes are a downsized PNG (or a small SVG), and main may serve them from
+     * the local thumbnail cache. `size` is small or large.
+     */
+    thumbnail(
+      sessionId: string,
+      requestId: string,
+      path: string,
+      size: 'small' | 'large',
+    ): Promise<IpcResult<Thumbnail>>;
+    cancelThumbnail(sessionId: string, requestId: string): Promise<IpcResult<null>>;
+  };
+  previews: {
+    /** Delete every cached thumbnail. Does not touch profiles, keys or downloads. */
+    clearCache(): Promise<IpcResult<null>>;
   };
   downloads: {
     list(): Promise<IpcResult<DownloadsSnapshot>>;
