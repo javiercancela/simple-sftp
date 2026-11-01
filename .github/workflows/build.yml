@@ -10,14 +10,16 @@ on:
 jobs:
   build:
     strategy:
-      # A failed or cancelled OS must not cancel the others. macos-14 in
-      # actions run 41236013385 was cancelled with no runner and no steps
-      # while this was already false; leave it false so that stays true.
+      # A failed or cancelled OS must not cancel the others.
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04 # Linux x64: .deb + .zip
-          - os: macos-14 # macOS arm64: .dmg + .zip
+          # macos-14 (arm64) is retired 2026-11-02. During the 2026-11-01 brownout
+          # GitHub cancels the job in about a second with no steps:
+          # https://github.com/actions/runner-images/issues/13518
+          # macos-15 is the current arm64 image.
+          - os: macos-15 # macOS arm64: .dmg + .zip
           - os: macos-15-intel # macOS x64: .dmg + .zip (macos-13 was retired Dec 2025; Intel runners end Aug 2027)
           - os: windows-latest # Windows x64: Squirrel installer
     runs-on: ${{ matrix.os }}

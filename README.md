@@ -395,9 +395,10 @@ machine where it is off.
 ## CI
 
 `.github/workflows/build.yml` runs the same steps on `ubuntu-24.04`,
-`macos-14` (arm64), `macos-15-intel` (x64; GitHub retired `macos-13` in
-December 2025) and `windows-latest`, and uploads `out/make/**`. It is
-**untested** (no GitHub runner access from the development box).
+`macos-15` (arm64; `macos-14` was retired on 2 November 2026), `macos-15-intel`
+(x64; GitHub retired `macos-13` in December 2025) and `windows-latest`, and
+uploads `out/make/**`. It is **untested** (no GitHub runner access from the
+development box).
 
 ## Licences and dependency audit
 

@@ -6,10 +6,10 @@
 //    starts to its normal UI even when SFTP_CLIENT_TRANSPORT_SMOKE is set.
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { extractFile } from '@electron/asar';
 import { chromium } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -89,6 +89,27 @@ const releaseApps = candidates('out');
 let server: SshdInstance;
 let expectedSha = '';
 
+/**
+ * Packaged Electron aborts when chrome-sandbox is present but not setuid root
+ * ("The SUID sandbox helper binary was found, but is not configured correctly").
+ * Archives and `dpkg-deb -x` do not keep that bit. Set it on the copy we
+ * launch, the same way a Linux install does. The bits inside the zip and deb
+ * are unchanged.
+ */
+function ensureLinuxChromeSandbox(exe: string): void {
+  if (process.platform !== 'linux') return;
+  const sandbox = join(dirname(exe), 'chrome-sandbox');
+  if (!existsSync(sandbox)) return;
+  const st = statSync(sandbox);
+  if (st.uid === 0 && (st.mode & 0o4000) !== 0) return;
+  const exec = (cmd: string, args: string[]): void => {
+    if (process.getuid?.() === 0) execFileSync(cmd, args, { stdio: 'pipe' });
+    else execFileSync('sudo', [cmd, ...args], { stdio: 'pipe' });
+  };
+  exec('chown', ['root:root', sandbox]);
+  exec('chmod', ['4755', sandbox]);
+}
+
 function runApp(
   exe: string,
   configPath: string,
@@ -96,6 +117,7 @@ function runApp(
   extraArgs: string[] = [],
   onStart?: () => Promise<void>,
 ): Promise<{ code: number | null; output: string }> {
+  ensureLinuxChromeSandbox(exe);
   const useXvfb = process.platform === 'linux' && !process.env.DISPLAY;
   const cmd = useXvfb ? 'xvfb-run' : exe;
   const args = useXvfb ? ['-a', exe, ...extraArgs] : extraArgs;
