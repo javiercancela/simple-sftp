@@ -365,9 +365,25 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     await select('Renewing cert');
     await connectButton();
     await waitStatus('Connected');
-    await page.locator('[data-testid="file-row"][data-name="big.bin"]').dblclick();
+    const big = page.locator('[data-testid="file-row"][data-name="big.bin"]');
+    await big.scrollIntoViewIfNeeded();
+    await big.click();
+    await page.getByTestId('download-button').click();
+    const plan = page.getByTestId('plan-dialog');
+    if (
+      await plan
+        .waitFor({ state: 'visible', timeout: 3_000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      const radio = plan.locator('input[type="radio"]').first();
+      if (await radio.count()) await radio.check();
+      await plan.getByRole('button', { name: 'Download' }).click();
+    }
     await page.waitForFunction(() => {
-      const r = document.querySelector('[data-testid="download-row"][data-state="downloading"]');
+      const r = document.querySelector(
+        '[data-testid="download-row"][data-name="big.bin"][data-state="downloading"]',
+      );
       return Number(r?.getAttribute('data-bytes') ?? 0) > 0;
     });
     signalAll(serverSessions(certServer), 'SIGSTOP');
