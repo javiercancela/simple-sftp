@@ -373,7 +373,9 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     const big = page.locator('[data-testid="file-row"][data-name="big.bin"]');
     await big.scrollIntoViewIfNeeded();
     await big.click();
-    await page.getByTestId('download-button').click();
+    const download = page.getByTestId('download-button');
+    await expect.poll(() => download.innerText()).toMatch(/Download \(1\)/);
+    await download.click();
     const plan = page.getByTestId('plan-dialog');
     if (
       await plan
@@ -385,10 +387,12 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
       if (await radio.count()) await radio.check();
       await plan.getByRole('button', { name: 'Download' }).click();
     }
-    // A queued job is already "in progress" for the quit prompt. The arm64
-    // runner can sit in that state before the first progress byte.
+    // Freeze as soon as the job exists. A huge file can finish, or sit
+    // queued, before the first progress byte is painted.
     await page.waitForFunction(() => {
-      const r = document.querySelector('[data-testid="download-row"][data-name="big.bin"]');
+      const summary = document.querySelector('[data-testid="queue-summary"]')?.textContent ?? '';
+      if (/big\.bin/.test(summary)) return true;
+      const r = document.querySelector('[data-testid="download-row"]');
       const state = r?.getAttribute('data-state');
       return state === 'queued' || state === 'downloading';
     });
