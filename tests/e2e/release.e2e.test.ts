@@ -101,11 +101,14 @@ async function waitStatus(text: string): Promise<void> {
 async function select(name: string): Promise<void> {
   await page.getByTestId('profile-item').filter({ hasText: name }).click();
 }
-async function connectButton(): Promise<void> {
+async function connectButton(timeout = 15_000): Promise<void> {
   const top = page.getByTestId('topbar');
   const other = top.getByRole('button', { name: /^Connect to / });
-  if (await other.count()) await other.click();
-  else await top.getByRole('button', { name: 'Connect', exact: true }).click();
+  const plain = top.getByRole('button', { name: 'Connect', exact: true });
+  const target = (await other.count()) ? other.first() : plain;
+  // The arm64 runner's window manager reports the toolbar as not clickable
+  // even after maximize. The button is the real control; dispatch the click.
+  await target.click({ force: true, timeout });
 }
 
 /** Ends the app and waits for its whole process tree to exit. */
@@ -277,8 +280,15 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
 
   it('A3: wrong passphrase is recoverable; no passphrase or key material is written to the data folder', async () => {
     await select('Encrypted key');
-    await connectButton();
     const pass = page.getByTestId('passphrase-dialog');
+    // A slow click on the profile can also fire its double-click connect.
+    if (!(await pass.isVisible().catch(() => false))) {
+      try {
+        await connectButton(4_000);
+      } catch (e) {
+        if (!(await pass.isVisible().catch(() => false))) throw e;
+      }
+    }
     await pass.waitFor();
     await pass.getByLabel(/Passphrase for ed_enc/).fill(WRONG);
     await pass.getByRole('button', { name: 'Unlock' }).click();
