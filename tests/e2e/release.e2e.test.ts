@@ -283,10 +283,14 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     await waitStatus('Connected');
     expect(keyServer.log).toMatch(/Accepted publickey/);
     // Use the session: browse and download (journal and settings get written).
-    await page.locator('[data-testid="file-row"][data-name="notes.txt"]').dblclick();
-    await page
-      .locator('[data-testid="download-row"][data-name="notes.txt"][data-state="completed"]')
-      .waitFor();
+    const notes = page.locator('[data-testid="file-row"][data-name="notes.txt"]');
+    await notes.scrollIntoViewIfNeeded();
+    await notes.dblclick();
+    // The row can sit outside a short macOS work area; don't require it to be visible.
+    const notesJob = page.locator('[data-testid="download-row"][data-name="notes.txt"]');
+    await expect
+      .poll(async () => notesJob.getAttribute('data-state'), { timeout: 30_000 })
+      .toBe('completed');
     expect(await readFile(join(DL, 'notes.txt'), 'utf8')).toBe('release validation\n');
     await page.getByRole('button', { name: 'Disconnect' }).click();
     await waitStatus('Disconnected');

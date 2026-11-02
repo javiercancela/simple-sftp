@@ -233,18 +233,22 @@ describe.skipIf(!bin || !built)('Electron app end-to-end (real sshd, xvfb)', () 
 
     await launch();
     await expect.poll(() => page.getByTestId('profile-item').count()).toBe(2);
-    const bounds = await app!.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0]?.getBounds(),
-    );
-    expect(bounds).toMatchObject(applied);
+    const bounds = await app!.evaluate(({ BrowserWindow, screen }) => {
+      const b = BrowserWindow.getAllWindows()[0]?.getBounds();
+      const area = screen.getPrimaryDisplay().workArea;
+      return b
+        ? { width: b.width, height: b.height, areaWidth: area.width, areaHeight: area.height }
+        : null;
+    });
+    if (!bounds) throw new Error('window was not restored');
+    // A saved size larger than the work area comes back clipped to that area.
+    expect(bounds.width).toBe(Math.min(applied.width, bounds.areaWidth));
+    expect(bounds.height).toBe(Math.min(applied.height, bounds.areaHeight));
     expect(await app!.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('dark');
     expect(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(
       true,
     );
-    expect(await page.evaluate(() => [innerWidth, innerHeight])).toEqual([
-      applied.width,
-      expect.any(Number),
-    ]);
+    expect(await page.evaluate(() => innerWidth)).toBe(bounds.width);
     expect(await page.getByRole('option', { selected: true }).innerText()).toContain(
       'Encrypted key server',
     );
