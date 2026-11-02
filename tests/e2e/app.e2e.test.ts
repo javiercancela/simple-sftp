@@ -211,6 +211,15 @@ describe.skipIf(!bin || !built)('Electron app end-to-end (real sshd, xvfb)', () 
       BrowserWindow.getAllWindows()[0]?.setBounds({ x: 60, y: 40, width: 1180, height: 760 });
     });
     await page.waitForTimeout(300);
+    // macOS clamps a window that does not fit the work area (GitHub's arm64
+    // runner saved height 684, not the requested 760). Persist whatever applied.
+    const applied = await app!.evaluate(({ BrowserWindow }) => {
+      const b = BrowserWindow.getAllWindows()[0]?.getNormalBounds();
+      return b ? { width: b.width, height: b.height } : null;
+    });
+    if (!applied) throw new Error('window bounds were not applied');
+    expect(applied.width).toBeGreaterThan(400);
+    expect(applied.height).toBeGreaterThan(300);
     const ids = (await readJson('profiles.json')).profiles.map((p: { id: string }) => p.id);
     await quit();
 
@@ -220,20 +229,20 @@ describe.skipIf(!bin || !built)('Electron app end-to-end (real sshd, xvfb)', () 
       sidebarWidth: 290,
       lastSelectedProfileId: ids[1],
     });
-    expect(settings.window).toMatchObject({ width: 1180, height: 760 });
+    expect(settings.window).toMatchObject(applied);
 
     await launch();
     await expect.poll(() => page.getByTestId('profile-item').count()).toBe(2);
     const bounds = await app!.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0]?.getBounds(),
     );
-    expect(bounds).toMatchObject({ width: 1180, height: 760 });
+    expect(bounds).toMatchObject(applied);
     expect(await app!.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('dark');
     expect(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(
       true,
     );
     expect(await page.evaluate(() => [innerWidth, innerHeight])).toEqual([
-      1180,
+      applied.width,
       expect.any(Number),
     ]);
     expect(await page.getByRole('option', { selected: true }).innerText()).toContain(

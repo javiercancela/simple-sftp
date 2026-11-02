@@ -7,7 +7,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { extractFile } from '@electron/asar';
@@ -112,6 +112,28 @@ function ensureLinuxChromeSandbox(exe: string): void {
   };
   exec('chown', ['root:root', sandbox]);
   exec('chmod', ['4755', sandbox]);
+}
+
+/** Resources next to a Linux/Windows binary, or Contents/Resources inside a .app. */
+function packagedResources(exe: string): string {
+  const parts = exe.split(/[/\\]/);
+  const macOs = parts.lastIndexOf('MacOS');
+  if (macOs > 0 && parts[macOs - 1] === 'Contents') return join(exe, '..', '..', 'Resources');
+  return join(exe, '..', 'resources');
+}
+
+/** Group- or world-writable paths. Skips symlinks. BSD find rejects `-perm /022`. */
+async function groupOrWorldWritable(dir: string): Promise<string[]> {
+  const bad: string[] = [];
+  const walk = async (p: string): Promise<void> => {
+    const st = await lstat(p);
+    if (st.isSymbolicLink()) return;
+    if (st.mode & 0o022) bad.push(p);
+    if (!st.isDirectory()) return;
+    for (const name of await readdir(p)) await walk(join(p, name));
+  };
+  await walk(dir);
+  return bad;
 }
 
 function runApp(
@@ -258,13 +280,10 @@ describe.skipIf(!bin || apps.length === 0)('smoke-flavored package: transport sm
 describe.skipIf(process.platform === 'win32' || releaseApps.length === 0)(
   'release artifacts: file permissions',
   () => {
-    it('no group- or world-writable files in the package, the .deb or the portable zip', () => {
+    it('no group- or world-writable files in the package, the .deb or the portable zip', async () => {
       const bad: string[] = [];
       const pkgDir = join(ROOT_DIR, 'out', `SimpleSFTP-${process.platform}-${process.arch}`);
-      if (existsSync(pkgDir)) {
-        const out = execFileSync('find', [pkgDir, '!', '-type', 'l', '-perm', '/022']).toString();
-        bad.push(...out.split('\n').filter(Boolean));
-      }
+      if (existsSync(pkgDir)) bad.push(...(await groupOrWorldWritable(pkgDir)));
       const make = join(ROOT_DIR, 'out', 'make');
       const found = existsSync(make)
         ? execFileSync('find', [
@@ -308,16 +327,15 @@ describe.skipIf(releaseApps.length === 0)('release artifacts: smoke hook compile
   for (const app of releaseApps) {
     it(`${app.label}: no smoke hook in app.asar; env var is ignored and the normal UI starts`, async () => {
       const exe = app.prepare();
-      const asar = join(exe, '..', 'resources', 'app.asar');
+      const resources = packagedResources(exe);
+      const asar = join(resources, 'app.asar');
       const main = extractFile(asar, '.vite/build/main.cjs').toString('utf8');
       expect(main.length).toBeGreaterThan(1000);
       expect(main).not.toContain('SFTP_CLIENT_TRANSPORT_SMOKE');
       expect(main).not.toContain('transport-smoke');
-      expect(existsSync(join(exe, '..', 'resources', 'app.asar.unpacked', '.vite', 'build'))).toBe(
-        false,
-      );
+      expect(existsSync(join(resources, 'app.asar.unpacked', '.vite', 'build'))).toBe(false);
       // Licence notices ship with the app.
-      expect(existsSync(join(exe, '..', 'resources', 'THIRD_PARTY_NOTICES.md'))).toBe(true);
+      expect(existsSync(join(resources, 'THIRD_PARTY_NOTICES.md'))).toBe(true);
 
       const outDir = join(TMP, 'release', app.label.replace(/[^a-z0-9]+/gi, '_'));
       await mkdir(outDir, { recursive: true });

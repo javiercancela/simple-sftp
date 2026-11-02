@@ -231,7 +231,11 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
         `${JSON.stringify({ measuredAt: new Date().toISOString(), environment: 'Linux, xvfb, Electron app against sshd on 127.0.0.1', ...metrics }, null, 2)}\n`,
       );
     for (const s of [certServer, keyServer]) if (s) signalAll(serverSessions(s), 'SIGCONT');
-    app?.process().kill('SIGKILL');
+    try {
+      app?.process().kill('SIGKILL');
+    } catch {
+      // Already exited, or Playwright dropped the handle after a failed launch.
+    }
     await certServer?.stop();
     await keyServer?.stop();
     if (!process.env.KEEP_TEST_TMP) await rm(TMP, { recursive: true, force: true });
