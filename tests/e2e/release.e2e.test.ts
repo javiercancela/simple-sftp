@@ -78,6 +78,11 @@ async function launch(): Promise<void> {
   });
   page = await app.firstWindow();
   await page.waitForSelector('.app', { timeout: 20_000 });
+  // GitHub's arm64 runner has a short work area. A default window clips the
+  // toolbar, and Playwright then waits forever for Connect.
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.maximize();
+  });
   await app.evaluate(({ dialog }, dir) => {
     dialog.showSaveDialog = (async (...args: unknown[]) => {
       const opts = args.at(-1) as { defaultPath?: string };
