@@ -285,9 +285,20 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     // Use the session: browse and download (journal and settings get written).
     const notes = page.locator('[data-testid="file-row"][data-name="notes.txt"]');
     await notes.scrollIntoViewIfNeeded();
-    await notes.dblclick();
-    // The row can sit outside a short macOS work area; don't require it to be visible.
+    await notes.click();
+    await page.getByRole('button', { name: /^Download/ }).click();
+    const plan = page.getByTestId('plan-dialog');
     const notesJob = page.locator('[data-testid="download-row"][data-name="notes.txt"]');
+    await Promise.race([
+      plan.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined),
+      notesJob.waitFor({ state: 'attached', timeout: 10_000 }).catch(() => undefined),
+    ]);
+    if (await plan.isVisible().catch(() => false)) {
+      const radio = plan.locator('input[type="radio"]').first();
+      if (await radio.count()) await radio.check();
+      await plan.getByRole('button', { name: 'Download' }).click();
+    }
+    // The queue can sit outside a short macOS work area; don't require it to be visible.
     await expect
       .poll(async () => notesJob.getAttribute('data-state'), { timeout: 30_000 })
       .toBe('completed');
