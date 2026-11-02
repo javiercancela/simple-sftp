@@ -286,7 +286,7 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     const notes = page.locator('[data-testid="file-row"][data-name="notes.txt"]');
     await notes.scrollIntoViewIfNeeded();
     await notes.click();
-    await page.getByRole('button', { name: /^Download/ }).click();
+    await page.getByTestId('download-button').click();
     const plan = page.getByTestId('plan-dialog');
     const notesJob = page.locator('[data-testid="download-row"][data-name="notes.txt"]');
     await Promise.race([
