@@ -385,11 +385,12 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
       if (await radio.count()) await radio.check();
       await plan.getByRole('button', { name: 'Download' }).click();
     }
+    // A queued job is already "in progress" for the quit prompt. The arm64
+    // runner can sit in that state before the first progress byte.
     await page.waitForFunction(() => {
-      const r = document.querySelector(
-        '[data-testid="download-row"][data-name="big.bin"][data-state="downloading"]',
-      );
-      return Number(r?.getAttribute('data-bytes') ?? 0) > 0;
+      const r = document.querySelector('[data-testid="download-row"][data-name="big.bin"]');
+      const state = r?.getAttribute('data-state');
+      return state === 'queued' || state === 'downloading';
     });
     signalAll(serverSessions(certServer), 'SIGSTOP');
     // Quit from the app menu / Cmd+Q path (before-quit), not the window.
