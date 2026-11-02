@@ -387,25 +387,18 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     await expect.poll(() => download.innerText()).toMatch(/Download \(1\)/);
     await download.click();
     const plan = page.getByTestId('plan-dialog');
-    if (
-      await plan
-        .waitFor({ state: 'visible', timeout: 3_000 })
-        .then(() => true)
-        .catch(() => false)
-    ) {
+    const row = page.locator('[data-testid="download-row"]');
+    const which = await Promise.race([
+      plan.waitFor({ state: 'visible', timeout: 20_000 }).then(() => 'plan' as const),
+      row.waitFor({ state: 'attached', timeout: 20_000 }).then(() => 'row' as const),
+    ]);
+    if (which === 'plan') {
       const radio = plan.locator('input[type="radio"]').first();
       if (await radio.count()) await radio.check();
       await plan.getByRole('button', { name: 'Download' }).click();
+      await row.waitFor({ state: 'attached' });
     }
-    // Freeze as soon as the job exists. A huge file can finish, or sit
-    // queued, before the first progress byte is painted.
-    await page.waitForFunction(() => {
-      const summary = document.querySelector('[data-testid="queue-summary"]')?.textContent ?? '';
-      if (/big\.bin/.test(summary)) return true;
-      const r = document.querySelector('[data-testid="download-row"]');
-      const state = r?.getAttribute('data-state');
-      return state === 'queued' || state === 'downloading';
-    });
+    // Stop the server before a fast link finishes the 256 MiB file.
     signalAll(serverSessions(certServer), 'SIGSTOP');
     // Quit from the app menu / Cmd+Q path (before-quit), not the window.
     await app!.evaluate(({ app: a }) => a.quit());
