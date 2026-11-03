@@ -16,7 +16,13 @@ import { TrustStore } from '../../src/main/connections/trust-store';
 import type { ConnectionSnapshot } from '../../src/shared/connection';
 import type { Profile } from '../../src/shared/profiles';
 import { hostFingerprint, keygen, pub, signCert } from './helpers/keys';
-import { SshdInstance, findSshd, freePort, type SshdConfig } from './helpers/sshd';
+import {
+  SshdInstance,
+  findSshd,
+  freePort,
+  sshdSupportsPerSourcePenalties,
+  type SshdConfig,
+} from './helpers/sshd';
 
 const bin = findSshd();
 const USER = userInfo().username;
@@ -308,7 +314,12 @@ describe.skipIf(!bin)('ConnectionManager against real sshd', () => {
     }
   });
 
-  it('a PerSourcePenalties block is reported as SERVER_REFUSED, not a generic network error', async () => {
+  it('a PerSourcePenalties block is reported as SERVER_REFUSED, not a generic network error', async (ctx) => {
+    if (!sshdSupportsPerSourcePenalties(bin!)) {
+      ctx.skip(
+        'OpenSSH rejected PerSourcePenalties in an sshd -t probe (the option arrived in OpenSSH 9.8; Ubuntu 24.04 ships 9.6). SERVER_REFUSED from a real penalty block is not exercised on this host.',
+      );
+    }
     // Real OpenSSH penalty: one failed login blocks this source for 30 s.
     const strict = await startServer('penalty', {
       perSourcePenalties: 'authfail:30s noauth:30s min:1s',

@@ -1,6 +1,7 @@
 {
   "singleQuote": true,
   "printWidth": 100,
+  "endOfLine": "lf",
   "sortPackageJson": false,
   "ignorePatterns": [
     "SPEC.md",

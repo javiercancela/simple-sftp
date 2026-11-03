@@ -6,10 +6,10 @@
 //    starts to its normal UI even when SFTP_CLIENT_TRANSPORT_SMOKE is set.
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { extractFile } from '@electron/asar';
 import { chromium } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -70,13 +70,17 @@ function candidates(outName: string): Candidate[] {
     }
   }
   const pkgDir = join(ROOT_DIR, outName, `SimpleSFTP-${process.platform}-${process.arch}`);
+  // executableName is simple-sftp; some packager versions use the product name.
+  const macExe = ['simple-sftp', 'SimpleSFTP']
+    .map((name) => join(pkgDir, 'SimpleSFTP.app', 'Contents', 'MacOS', name))
+    .find((p) => existsSync(p));
   const exe =
     process.platform === 'darwin'
-      ? join(pkgDir, 'SimpleSFTP.app', 'Contents', 'MacOS', 'SimpleSFTP')
+      ? macExe
       : process.platform === 'win32'
         ? join(pkgDir, 'simple-sftp.exe')
         : join(pkgDir, 'simple-sftp');
-  if (existsSync(exe))
+  if (exe && existsSync(exe))
     list.push({ label: `packaged dir ${pkgDir.split(/[\\/]/).pop()}`, prepare: () => exe });
   return list;
 }
@@ -89,6 +93,49 @@ const releaseApps = candidates('out');
 let server: SshdInstance;
 let expectedSha = '';
 
+/**
+ * Packaged Electron aborts when chrome-sandbox is present but not setuid root
+ * ("The SUID sandbox helper binary was found, but is not configured correctly").
+ * Archives and `dpkg-deb -x` do not keep that bit. Set it on the copy we
+ * launch, the same way a Linux install does. The bits inside the zip and deb
+ * are unchanged.
+ */
+function ensureLinuxChromeSandbox(exe: string): void {
+  if (process.platform !== 'linux') return;
+  const sandbox = join(dirname(exe), 'chrome-sandbox');
+  if (!existsSync(sandbox)) return;
+  const st = statSync(sandbox);
+  if (st.uid === 0 && (st.mode & 0o4000) !== 0) return;
+  const exec = (cmd: string, args: string[]): void => {
+    if (process.getuid?.() === 0) execFileSync(cmd, args, { stdio: 'pipe' });
+    else execFileSync('sudo', [cmd, ...args], { stdio: 'pipe' });
+  };
+  exec('chown', ['root:root', sandbox]);
+  exec('chmod', ['4755', sandbox]);
+}
+
+/** Resources next to a Linux/Windows binary, or Contents/Resources inside a .app. */
+function packagedResources(exe: string): string {
+  const parts = exe.split(/[/\\]/);
+  const macOs = parts.lastIndexOf('MacOS');
+  if (macOs > 0 && parts[macOs - 1] === 'Contents') return join(exe, '..', '..', 'Resources');
+  return join(exe, '..', 'resources');
+}
+
+/** Group- or world-writable paths. Skips symlinks. BSD find rejects `-perm /022`. */
+async function groupOrWorldWritable(dir: string): Promise<string[]> {
+  const bad: string[] = [];
+  const walk = async (p: string): Promise<void> => {
+    const st = await lstat(p);
+    if (st.isSymbolicLink()) return;
+    if (st.mode & 0o022) bad.push(p);
+    if (!st.isDirectory()) return;
+    for (const name of await readdir(p)) await walk(join(p, name));
+  };
+  await walk(dir);
+  return bad;
+}
+
 function runApp(
   exe: string,
   configPath: string,
@@ -96,6 +143,7 @@ function runApp(
   extraArgs: string[] = [],
   onStart?: () => Promise<void>,
 ): Promise<{ code: number | null; output: string }> {
+  ensureLinuxChromeSandbox(exe);
   const useXvfb = process.platform === 'linux' && !process.env.DISPLAY;
   const cmd = useXvfb ? 'xvfb-run' : exe;
   const args = useXvfb ? ['-a', exe, ...extraArgs] : extraArgs;
@@ -232,13 +280,10 @@ describe.skipIf(!bin || apps.length === 0)('smoke-flavored package: transport sm
 describe.skipIf(process.platform === 'win32' || releaseApps.length === 0)(
   'release artifacts: file permissions',
   () => {
-    it('no group- or world-writable files in the package, the .deb or the portable zip', () => {
+    it('no group- or world-writable files in the package, the .deb or the portable zip', async () => {
       const bad: string[] = [];
       const pkgDir = join(ROOT_DIR, 'out', `SimpleSFTP-${process.platform}-${process.arch}`);
-      if (existsSync(pkgDir)) {
-        const out = execFileSync('find', [pkgDir, '!', '-type', 'l', '-perm', '/022']).toString();
-        bad.push(...out.split('\n').filter(Boolean));
-      }
+      if (existsSync(pkgDir)) bad.push(...(await groupOrWorldWritable(pkgDir)));
       const make = join(ROOT_DIR, 'out', 'make');
       const found = existsSync(make)
         ? execFileSync('find', [
@@ -282,16 +327,15 @@ describe.skipIf(releaseApps.length === 0)('release artifacts: smoke hook compile
   for (const app of releaseApps) {
     it(`${app.label}: no smoke hook in app.asar; env var is ignored and the normal UI starts`, async () => {
       const exe = app.prepare();
-      const asar = join(exe, '..', 'resources', 'app.asar');
+      const resources = packagedResources(exe);
+      const asar = join(resources, 'app.asar');
       const main = extractFile(asar, '.vite/build/main.cjs').toString('utf8');
       expect(main.length).toBeGreaterThan(1000);
       expect(main).not.toContain('SFTP_CLIENT_TRANSPORT_SMOKE');
       expect(main).not.toContain('transport-smoke');
-      expect(existsSync(join(exe, '..', 'resources', 'app.asar.unpacked', '.vite', 'build'))).toBe(
-        false,
-      );
+      expect(existsSync(join(resources, 'app.asar.unpacked', '.vite', 'build'))).toBe(false);
       // Licence notices ship with the app.
-      expect(existsSync(join(exe, '..', 'resources', 'THIRD_PARTY_NOTICES.md'))).toBe(true);
+      expect(existsSync(join(resources, 'THIRD_PARTY_NOTICES.md'))).toBe(true);
 
       const outDir = join(TMP, 'release', app.label.replace(/[^a-z0-9]+/gi, '_'));
       await mkdir(outDir, { recursive: true });
@@ -304,7 +348,10 @@ describe.skipIf(releaseApps.length === 0)('release artifacts: smoke hook compile
       const { output } = await runApp(
         exe,
         configPath,
-        { XDG_CONFIG_HOME: join(outDir, 'config') },
+        {
+          XDG_CONFIG_HOME: join(outDir, 'config'),
+          SFTP_CLIENT_USER_DATA: join(outDir, 'config', 'SimpleSFTP'),
+        },
         [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'],
         async () => {
           let browser;

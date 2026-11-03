@@ -10,11 +10,15 @@ on:
 jobs:
   build:
     strategy:
+      # A failed or cancelled OS must not cancel the others.
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04 # Linux x64: .deb + .zip
-          - os: macos-14 # macOS arm64: .dmg + .zip
+          # macos-14 (arm64) was retired on 2026-11-02. During the brownout
+          # GitHub cancelled it in about a second with no steps
+          # (actions/runner-images#13518). macos-15 is the current arm64 image.
+          - os: macos-15 # macOS arm64: .dmg + .zip
           - os: macos-15-intel # macOS x64: .dmg + .zip (macos-13 was retired Dec 2025; Intel runners end Aug 2027)
           - os: windows-latest # Windows x64: Squirrel installer
     runs-on: ${{ matrix.os }}
@@ -36,7 +40,30 @@ jobs:
       - name: Unit tests only (no unprivileged sshd fixture on Windows yet)
         if: runner.os == 'Windows'
         run: npm run test:unit
-      - run: npm run make
+      - name: OpenSSH integration, Electron e2e, and packaged smoke are skipped on Windows
+        if: runner.os == 'Windows'
+        run: echo "Skipped on Windows. This runner has no unprivileged sshd fixture, so real-sshd integration, Electron e2e, and packaged smoke do not run. Unit tests, lint, typecheck, and the installer build still run."
+      # GitHub's macOS runners intermittently fail `hdiutil detach /Volumes/SimpleSFTP`
+      # with "No such file or directory" after DiskArbitration drops the image.
+      # appdmg only retries exit code 16, so the whole make is retried on Darwin.
+      - name: Build installers
+        shell: bash
+        run: |
+          set -uo pipefail
+          attempt=1
+          while true; do
+            if npm run make; then
+              exit 0
+            fi
+            status=$?
+            if [ "$(uname -s)" != Darwin ] || [ "$attempt" -ge 3 ]; then
+              exit "$status"
+            fi
+            echo "make failed (attempt ${attempt}). Retrying after hdiutil detach flake."
+            hdiutil detach /Volumes/SimpleSFTP >/dev/null 2>&1 || true
+            rm -rf out/make
+            attempt=$((attempt + 1))
+          done
       - name: Electron UI end-to-end (real sshd)
         if: runner.os != 'Windows'
         run: npm run test:e2e

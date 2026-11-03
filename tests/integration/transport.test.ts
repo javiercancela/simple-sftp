@@ -618,7 +618,13 @@ describe.skipIf(!bin)('OpenSSH transport (real sshd on 127.0.0.1)', () => {
         expect(await sha256File(out)).toBe(fileHashes.get(name));
         if (name === 'random-8MiB.bin') {
           // Regression guard for TCP_NODELAY (Nagle stalls gave ~1.4 MiB/s).
-          expect(8 / seconds, `throughput ${(8 / seconds).toFixed(1)} MiB/s`).toBeGreaterThan(8);
+          // Linux keeps the 8 MiB/s floor. macos-15-intel measured 7.1 MiB/s on
+          // the same transfer under parallel load (actions run 41236013385),
+          // still several times the Nagle failure.
+          const floor = process.platform === 'linux' ? 8 : 4;
+          expect(8 / seconds, `throughput ${(8 / seconds).toFixed(1)} MiB/s`).toBeGreaterThan(
+            floor,
+          );
         }
       });
     }

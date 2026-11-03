@@ -115,7 +115,12 @@ describe.skipIf(!bin)('download fault cases (real sshd, real filesystem)', () =>
     expect(fx.snapshot().error?.code).toBe('SFTP_UNAVAILABLE');
   });
 
-  it('SFTP subsystem stops mid-transfer: the job fails as SFTP unavailable, the queue pauses, the partial is removed', async () => {
+  it('SFTP subsystem stops mid-transfer: the job fails as SFTP unavailable, the queue pauses, the partial is removed', async (ctx) => {
+    if (!bin!.sftpServer) {
+      ctx.skip(
+        'sftp-server binary not found (libexec, common OS paths, and sshd -T subsystem). The mid-transfer kill needs an external sftp-server; internal-sftp cannot be signalled on its own.',
+      );
+    }
     const fx = await startFixtureServer({
       bin: bin!,
       root: join(ROOT, 'ext'),
@@ -137,7 +142,10 @@ describe.skipIf(!bin)('download fault cases (real sshd, real filesystem)', () =>
     if (r.status !== 'enqueued') throw new Error(r.status);
     await waitFor((s) => (s.jobs[0]?.bytes ?? 0) > 0);
     const sftp = fx.sftpServerPids();
-    expect(sftp.length).toBe(1);
+    expect(
+      sftp,
+      `expected one sftp-server process; session commands: ${fx.sessionCommands().join(' | ') || '(none)'}`,
+    ).toHaveLength(1);
     signalAll(sftp, 'SIGKILL');
     const s = await waitFor((x) => x.jobs[0]?.state === 'failed' && x.pause !== null);
     expect(s.jobs[0]!.error?.code).toBe('SFTP_UNAVAILABLE');

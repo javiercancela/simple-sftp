@@ -69,10 +69,20 @@ async function launch(): Promise<void> {
     executablePath: electronPath as unknown as string,
     args: [REPO],
     colorScheme: null,
-    env: { ...process.env, XDG_CONFIG_HOME: CONFIG_HOME, ELECTRON_ENABLE_LOGGING: '0' },
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: CONFIG_HOME,
+      SFTP_CLIENT_USER_DATA: USER_DATA,
+      ELECTRON_ENABLE_LOGGING: '0',
+    },
   });
   page = await app.firstWindow();
   await page.waitForSelector('.app', { timeout: 20_000 });
+  // GitHub's arm64 runner has a short work area. A default window clips the
+  // toolbar, and Playwright then waits forever for Connect.
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.maximize();
+  });
   await app.evaluate(({ dialog }, dir) => {
     dialog.showSaveDialog = (async (...args: unknown[]) => {
       const opts = args.at(-1) as { defaultPath?: string };
@@ -91,11 +101,14 @@ async function waitStatus(text: string): Promise<void> {
 async function select(name: string): Promise<void> {
   await page.getByTestId('profile-item').filter({ hasText: name }).click();
 }
-async function connectButton(): Promise<void> {
+async function connectButton(timeout = 15_000): Promise<void> {
   const top = page.getByTestId('topbar');
   const other = top.getByRole('button', { name: /^Connect to / });
-  if (await other.count()) await other.click();
-  else await top.getByRole('button', { name: 'Connect', exact: true }).click();
+  const plain = top.getByRole('button', { name: 'Connect', exact: true });
+  const target = (await other.count()) ? other.first() : plain;
+  // The arm64 runner's window manager reports the toolbar as not clickable
+  // even after maximize. The button is the real control; dispatch the click.
+  await target.click({ force: true, timeout });
 }
 
 /** Ends the app and waits for its whole process tree to exit. */
@@ -226,7 +239,11 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
         `${JSON.stringify({ measuredAt: new Date().toISOString(), environment: 'Linux, xvfb, Electron app against sshd on 127.0.0.1', ...metrics }, null, 2)}\n`,
       );
     for (const s of [certServer, keyServer]) if (s) signalAll(serverSessions(s), 'SIGCONT');
-    app?.process().kill('SIGKILL');
+    try {
+      app?.process().kill('SIGKILL');
+    } catch {
+      // Already exited, or Playwright dropped the handle after a failed launch.
+    }
     await certServer?.stop();
     await keyServer?.stop();
     if (!process.env.KEEP_TEST_TMP) await rm(TMP, { recursive: true, force: true });
@@ -263,8 +280,15 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
 
   it('A3: wrong passphrase is recoverable; no passphrase or key material is written to the data folder', async () => {
     await select('Encrypted key');
-    await connectButton();
     const pass = page.getByTestId('passphrase-dialog');
+    // A slow click on the profile can also fire its double-click connect.
+    if (!(await pass.isVisible().catch(() => false))) {
+      try {
+        await connectButton(4_000);
+      } catch (e) {
+        if (!(await pass.isVisible().catch(() => false))) throw e;
+      }
+    }
     await pass.waitFor();
     await pass.getByLabel(/Passphrase for ed_enc/).fill(WRONG);
     await pass.getByRole('button', { name: 'Unlock' }).click();
@@ -274,10 +298,25 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     await waitStatus('Connected');
     expect(keyServer.log).toMatch(/Accepted publickey/);
     // Use the session: browse and download (journal and settings get written).
-    await page.locator('[data-testid="file-row"][data-name="notes.txt"]').dblclick();
-    await page
-      .locator('[data-testid="download-row"][data-name="notes.txt"][data-state="completed"]')
-      .waitFor();
+    const notes = page.locator('[data-testid="file-row"][data-name="notes.txt"]');
+    await notes.scrollIntoViewIfNeeded();
+    await notes.click();
+    await page.getByTestId('download-button').click();
+    const plan = page.getByTestId('plan-dialog');
+    const notesJob = page.locator('[data-testid="download-row"][data-name="notes.txt"]');
+    await Promise.race([
+      plan.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined),
+      notesJob.waitFor({ state: 'attached', timeout: 10_000 }).catch(() => undefined),
+    ]);
+    if (await plan.isVisible().catch(() => false)) {
+      const radio = plan.locator('input[type="radio"]').first();
+      if (await radio.count()) await radio.check();
+      await plan.getByRole('button', { name: 'Download' }).click();
+    }
+    // The queue can sit outside a short macOS work area; don't require it to be visible.
+    await expect
+      .poll(async () => notesJob.getAttribute('data-state'), { timeout: 30_000 })
+      .toBe('completed');
     expect(await readFile(join(DL, 'notes.txt'), 'utf8')).toBe('release validation\n');
     await page.getByRole('button', { name: 'Disconnect' }).click();
     await waitStatus('Disconnected');
@@ -341,11 +380,25 @@ describe.skipIf(!bin || !built)('Release validation end-to-end (real sshd, xvfb)
     await select('Renewing cert');
     await connectButton();
     await waitStatus('Connected');
-    await page.locator('[data-testid="file-row"][data-name="big.bin"]').dblclick();
-    await page.waitForFunction(() => {
-      const r = document.querySelector('[data-testid="download-row"][data-state="downloading"]');
-      return Number(r?.getAttribute('data-bytes') ?? 0) > 0;
-    });
+    const big = page.locator('[data-testid="file-row"][data-name="big.bin"]');
+    await big.scrollIntoViewIfNeeded();
+    await big.click();
+    const download = page.getByTestId('download-button');
+    await expect.poll(() => download.innerText()).toMatch(/Download \(1\)/);
+    await download.click();
+    const plan = page.getByTestId('plan-dialog');
+    const row = page.locator('[data-testid="download-row"]');
+    const which = await Promise.race([
+      plan.waitFor({ state: 'visible', timeout: 20_000 }).then(() => 'plan' as const),
+      row.waitFor({ state: 'attached', timeout: 20_000 }).then(() => 'row' as const),
+    ]);
+    if (which === 'plan') {
+      const radio = plan.locator('input[type="radio"]').first();
+      if (await radio.count()) await radio.check();
+      await plan.getByRole('button', { name: 'Download' }).click();
+      await row.waitFor({ state: 'attached' });
+    }
+    // Stop the server before a fast link finishes the 256 MiB file.
     signalAll(serverSessions(certServer), 'SIGSTOP');
     // Quit from the app menu / Cmd+Q path (before-quit), not the window.
     await app!.evaluate(({ app: a }) => a.quit());

@@ -55,7 +55,12 @@ async function launch(): Promise<void> {
     executablePath: electronPath as unknown as string,
     args: [REPO],
     colorScheme: null,
-    env: { ...process.env, XDG_CONFIG_HOME: CONFIG_HOME, ELECTRON_ENABLE_LOGGING: '0' },
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: CONFIG_HOME,
+      SFTP_CLIENT_USER_DATA: USER_DATA,
+      ELECTRON_ENABLE_LOGGING: '0',
+    },
   });
   page = await app.firstWindow();
   await page.waitForSelector('.app', { timeout: 20_000 });
